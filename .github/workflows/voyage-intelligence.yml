@@ -1,6 +1,15 @@
 name: Voyage Intelligence Foundation
 
 on:
+  push:
+    branches:
+      - 'feat/voyage-intelligence-foundation'
+    paths:
+      - 'src/ai/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'tsconfig.json'
+      - '.github/workflows/voyage-intelligence.yml'
   pull_request:
     paths:
       - 'src/ai/**'
