@@ -14,6 +14,8 @@ test('planner brain uses a full travel planning method instead of attraction lis
   assert.ok(capabilities.phases.includes('LOCK_HARD_ANCHORS'));
   assert.ok(capabilities.phases.includes('PLACE_MEALS_WORK_REST'));
   assert.ok(capabilities.phases.includes('MONITOR_AND_REPLAN'));
+  assert.equal(capabilities.approvalPolicy.requiresExplicitUserApprovalForItineraryMutation, true);
+  assert.equal(capabilities.approvalPolicy.automaticMutationAllowed, false);
 });
 
 test('brief treats imported Maps places as intent signals and asks only high impact missing inputs', () => {
@@ -37,6 +39,7 @@ test('strategy protects free time for relaxed users and prioritizes feasibility'
   assert.equal(strategy.freeTimePolicy.protect, true);
   assert.equal(strategy.freeTimePolicy.recommendedDailyMinutes, 150);
   assert.equal(strategy.priorities[0].dimension, 'HARD_CONSTRAINT_COMPLIANCE');
+  assert.equal(strategy.approvalPolicy.proposalFirst, true);
 });
 
 test('plan quality fails when hard constraints or impossible transitions exist', () => {
@@ -53,11 +56,24 @@ test('plan quality fails when hard constraints or impossible transitions exist',
   assert.ok(quality.violations.some((item) => item.startsWith('IMPOSSIBLE_TRANSITION')));
 });
 
-test('replanning repairs smallest scope and preserves locked items', () => {
+test('replanning proposes the smallest repair and waits for explicit approval', () => {
   const decision = buildReplanDecision({ changeType: 'RUNNING_LATE', lockedItems: [{ id: 'show' }] });
   assert.deepEqual(decision.preserve, ['SHOW']);
   assert.ok(decision.actions.includes('REMOVE_LOWEST_VALUE_OPTIONAL_STOP'));
-  assert.match(decision.policy, /smallest affected scope/i);
+  assert.equal(decision.actionsAreProposals, true);
+  assert.equal(decision.requiresUserApproval, true);
+  assert.equal(decision.userApproved, false);
+  assert.equal(decision.mayApply, false);
+  assert.equal(decision.executionMode, 'PROPOSAL_ONLY');
+  assert.match(decision.policy, /explicitly approves/i);
+});
+
+test('an approved replan is marked eligible to apply only after explicit approval', () => {
+  const decision = buildReplanDecision({ changeType: 'WEATHER', userApproved: true });
+  assert.equal(decision.requiresUserApproval, true);
+  assert.equal(decision.userApproved, true);
+  assert.equal(decision.mayApply, true);
+  assert.equal(decision.executionMode, 'APPROVED_CHANGE');
 });
 
 test('explicit preference learning outranks inferred behavior and remains reversible', () => {
