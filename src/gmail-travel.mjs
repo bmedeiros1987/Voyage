@@ -1,10 +1,12 @@
 import { classifyTravelDocument } from './import-taxonomy.mjs';
 import { extractGenericTravelFacts } from './pdf-ingest.mjs';
+import { detectTravelProvider, extractProviderTravelFacts } from './travel-provider-parsers.mjs';
 
 const TRAVEL_TERMS = [
   'booking', 'reservation', 'reserva', 'itinerary', 'itinerario', 'itinerário', 'boarding pass', 'cartão de embarque',
   'flight', 'voo', 'hotel', 'check-in', 'check in', 'car rental', 'aluguel de carro', 'train', 'trem', 'bus', 'onibus', 'ônibus',
-  'ferry', 'transfer', 'ticket', 'ingresso', 'museum', 'museu', 'tour', 'passeio', 'cruise', 'cruzeiro', 'insurance', 'seguro viagem'
+  'ferry', 'transfer', 'ticket', 'ingresso', 'museum', 'museu', 'tour', 'passeio', 'cruise', 'cruzeiro', 'insurance', 'seguro viagem',
+  'voucher', 'localizador', 'confirmation', 'cancelamento', 'cancellation', 'alteração', 'updated'
 ];
 
 export function gmailRealtimeContract() {
@@ -18,11 +20,12 @@ export function gmailRealtimeContract() {
       'Create Gmail users.watch subscription backed by Google Pub/Sub',
       'For each Pub/Sub notification fetch Gmail history since lastHistoryId',
       'Fetch only changed candidate messages and attachments needed for travel extraction',
-      'Normalize into the same Universal Travel Importer pipeline used by manual PDFs',
+      'Normalize email body, PDF, ICS and sniffed travel attachments through the Universal Travel Importer',
+      'Detect confirmation, modification and cancellation and update the matched reservation instead of duplicating it',
       'Deduplicate by provider message id, attachment digest and reservation fingerprint',
       'Renew watch before expiration and fail closed when history continuity is lost'
     ],
-    retention: 'Prefer structured travel facts and attachment digests. Do not retain unrelated mailbox content.'
+    retention: 'Prefer structured travel facts and attachment digests. Do not retain unrelated mailbox content or raw personal data beyond what is necessary to process the reservation.'
   });
 }
 
@@ -32,24 +35,47 @@ export function classifyGmailCandidate(input = {}) {
   const snippet = clean(input.snippet);
   const bodyPreview = clean(input.bodyPreview);
   const attachmentNames = Array.isArray(input.attachmentNames) ? input.attachmentNames.map(clean) : [];
-  const haystack = [subject, from, snippet, bodyPreview, ...attachmentNames].join(' ');
+  const rawText = [input.subject, input.from, input.snippet, input.bodyPreview, ...attachmentNames].filter(Boolean).join('\n');
+  const haystack = clean(rawText);
   const taxonomy = classifyTravelDocument(haystack, input.categoryHint || null);
-  const matchedTerms = TRAVEL_TERMS.filter((term) => haystack.includes(clean(term))).slice(0, 10);
+  const matchedTerms = TRAVEL_TERMS.filter((term) => haystack.includes(clean(term))).slice(0, 12);
   const hasPdf = attachmentNames.some((name) => name.endsWith('.pdf'));
-  const provider = detectProvider(haystack);
+  const hasIcs = attachmentNames.some((name) => name.endsWith('.ics'));
+  const provider = detectTravelProvider(rawText);
+  const providerParsing = extractProviderTravelFacts([input.subject, input.snippet, input.bodyPreview].filter(Boolean).join('\n'), {
+    provider,
+    fileName: attachmentNames.find((name) => name.endsWith('.ics')) || null,
+    category: taxonomy.category
+  });
   const providerSignal = Boolean(provider);
-  const confidence = Math.min(1, taxonomy.confidence + (matchedTerms.length ? 0.12 : 0) + (hasPdf ? 0.08 : 0) + (providerSignal ? 0.08 : 0));
-  const facts = extractGenericTravelFacts([input.subject, input.snippet, input.bodyPreview].filter(Boolean).join(' '), taxonomy.category);
+  const confidence = Math.min(1, Math.max(taxonomy.confidence, providerParsing.confidence || 0) + (matchedTerms.length ? 0.1 : 0) + (hasPdf ? 0.07 : 0) + (hasIcs ? 0.07 : 0) + (providerSignal ? 0.07 : 0));
+  const genericFacts = extractGenericTravelFacts([input.subject, input.snippet, input.bodyPreview].filter(Boolean).join(' '), providerParsing.category || taxonomy.category);
+  const eventState = detectReservationEventState(haystack, providerParsing.status);
+  const facts = Object.freeze({ ...genericFacts, ...(providerParsing.facts || {}), ...(provider ? { provider } : {}), reservationEventState: eventState });
 
   return Object.freeze({
-    candidate: confidence >= 0.5 || matchedTerms.length >= 2,
+    candidate: confidence >= 0.5 || matchedTerms.length >= 2 || providerSignal,
     confidence,
-    category: taxonomy.category,
+    category: providerParsing.category || taxonomy.category,
     provider,
+    eventState,
+    mutationIntent: eventState === 'CANCELLED' ? 'CANCEL_MATCHED_RESERVATION' : eventState === 'MODIFIED' ? 'UPDATE_MATCHED_RESERVATION' : 'UPSERT_RESERVATION',
     facts,
-    evidence: [...new Set([...taxonomy.evidence, ...matchedTerms, ...(hasPdf ? ['pdf_attachment'] : []), ...(providerSignal ? ['known_travel_provider'] : [])])].slice(0, 12),
-    attachmentPdfCount: attachmentNames.filter((name) => name.endsWith('.pdf')).length
+    providerParsing,
+    evidence: [...new Set([...taxonomy.evidence, ...matchedTerms, ...(hasPdf ? ['pdf_attachment'] : []), ...(hasIcs ? ['ics_attachment'] : []), ...(providerSignal ? ['known_travel_provider'] : [])])].slice(0, 14),
+    attachmentPdfCount: attachmentNames.filter((name) => name.endsWith('.pdf')).length,
+    attachmentIcsCount: attachmentNames.filter((name) => name.endsWith('.ics')).length,
+    attachmentStrategy: 'Sniff file signatures/content as well as MIME because travel providers may label PDFs or ICS incorrectly.'
   });
+}
+
+export function detectReservationEventState(value = '', providerStatus = null) {
+  const text = clean(value);
+  if (providerStatus === 'CANCELLED' || /cancel(?:led|lation|amento|ada|ado)|reserva cancelada|booking cancelled/.test(text)) return 'CANCELLED';
+  if (providerStatus === 'MODIFIED' || /alterad|modificad|updated|changed|mudan[cç]a na reserva|booking update/.test(text)) return 'MODIFIED';
+  if (/standby|listado|listed|zed\s*-\s*r\d/.test(text)) return 'STANDBY_OR_LISTED';
+  if (/confirmad|confirmed|emitid|issued|voucher/.test(text)) return 'CONFIRMED';
+  return 'UNKNOWN';
 }
 
 export function parseGmailPubSubEnvelope(payload = {}) {
@@ -71,20 +97,8 @@ export function buildGmailDiscoveryQuery() {
     'newer_than:2y',
     '-in:spam',
     '-in:trash',
-    '(has:attachment OR subject:(booking reservation reserva itinerary itinerário voo flight hotel ticket ingresso boarding check-in))'
+    '(has:attachment OR subject:(booking reservation reserva itinerary itinerário voo flight hotel ticket ingresso boarding check-in voucher confirmação cancelamento))'
   ].join(' ');
-}
-
-function detectProvider(value) {
-  const providers = [
-    ['Booking.com', /booking(?:\.com)?/i], ['Expedia', /expedia/i], ['Airbnb', /airbnb/i], ['LATAM', /latam/i],
-    ['GOL', /\bgol\b/i], ['Azul', /\bazul\b/i], ['United', /united/i], ['Delta', /delta/i], ['American Airlines', /american airlines|aa\.com/i],
-    ['Air France', /air france/i], ['KLM', /\bklm\b/i], ['Lufthansa', /lufthansa/i], ['Iberia', /iberia/i], ['TAP', /tap air|flytap|\btap\b/i],
-    ['Ryanair', /ryanair/i], ['easyJet', /easyjet/i], ['FlixBus', /flixbus/i], ['Trenitalia', /trenitalia/i], ['Italo', /italotreno|\bitalo\b/i],
-    ['Renfe', /renfe/i], ['Eurostar', /eurostar/i], ['Localiza', /localiza/i], ['Movida', /movida/i], ['Hertz', /hertz/i], ['Avis', /\bavis\b/i],
-    ['Sixt', /\bsixt\b/i], ['Rentcars', /rentcars/i], ['Ticketmaster', /ticketmaster/i], ['GetYourGuide', /getyourguide/i], ['Viator', /viator/i], ['Civitatis', /civitatis/i]
-  ];
-  return providers.find(([, pattern]) => pattern.test(value))?.[0] || null;
 }
 
 function clean(value) {
