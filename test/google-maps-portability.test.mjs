@@ -23,6 +23,15 @@ test('shared Google Maps link is accepted for provider resolution without scrapi
   assert.match(result.resolverPolicy, /never scrape/i);
 });
 
+test('real user-shared Google Maps short link is accepted as an import source', () => {
+  const sourceUrl = 'https://maps.app.goo.gl/i75PThBJWAMyKfMW9';
+  const result = normalizeGoogleMapsSharedUrl(sourceUrl);
+  assert.equal(result.status, 'NEEDS_PROVIDER_RESOLUTION');
+  assert.equal(result.sourceType, 'GOOGLE_MAPS_SHARED_ROUTE_URL');
+  assert.equal(result.sourceUrl, sourceUrl);
+  assert.deepEqual(result.items, []);
+});
+
 test('My Maps KML placemarks normalize into itinerary items', () => {
   const kml = `<?xml version="1.0"?><kml><Document><Placemark><name>Museu</name><description>Visita</description><Point><coordinates>-46.6333,-23.5505,0</coordinates></Point></Placemark></Document></kml>`;
   const result = normalizeMyMapsKml(kml);
