@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2732 2732">
+  <defs>
+    <radialGradient id="halo" cx="50%" cy="42%" r="55%">
+      <stop offset="0" stop-color="#1c2a38"/>
+      <stop offset="1" stop-color="#07111c"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f2dfbd"/>
+      <stop offset="1" stop-color="#c5924d"/>
+    </linearGradient>
+  </defs>
+  <rect width="2732" height="2732" fill="url(#halo)"/>
+  <g transform="translate(0 20)" fill="url(#gold)">
+    <path d="M776 988 1302 1085 1138 1493 893 1365Z"/>
+    <path d="m1956 988-526 97 164 408 245-128Z"/>
+    <path d="m1366 1203 171 456-171-102-171 102Z"/>
+  </g>
+  <text x="1366" y="1875" fill="#f7f2e9" text-anchor="middle" font-size="180" letter-spacing="46" font-family="Arial,Helvetica,sans-serif">VOYAGE</text>
+  <text x="1366" y="2010" fill="#d9b171" text-anchor="middle" font-size="58" letter-spacing="28" font-family="Arial,Helvetica,sans-serif">BEYOND THE TRIP</text>
+</svg>
