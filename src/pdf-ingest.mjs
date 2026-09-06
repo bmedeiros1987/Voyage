@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
 import { classifyTravelDocument } from './import-taxonomy.mjs';
 import { normalizeTravelSource } from './travel-source.mjs';
+import { extractProviderTravelFacts } from './travel-provider-parsers.mjs';
 
 const MAX_PDF_BYTES = 15 * 1024 * 1024;
 
@@ -13,7 +14,7 @@ export function ingestPdfBuffer(buffer, options = {}) {
 
   const sha256 = createHash('sha256').update(buffer).digest('hex');
   const source = normalizeTravelSource({
-    sourceType: 'upload',
+    sourceType: options.sourceType || 'upload',
     sourceId: options.sourceId || `pdf-${sha256.slice(0, 20)}`,
     provider: options.provider || 'manual_pdf',
     receivedAt: options.receivedAt,
@@ -26,8 +27,23 @@ export function ingestPdfBuffer(buffer, options = {}) {
   const extracted = encrypted ? { text: '', pagesApprox: null, method: 'encrypted', warnings: ['PDF_ENCRYPTED'] } : extractPdfTextBestEffort(buffer);
   const mergedText = [options.textHint, extracted.text].filter(Boolean).join('\n');
   const classification = classifyTravelDocument(mergedText, options.categoryHint || null);
-  const facts = extractGenericTravelFacts(mergedText, classification.category);
-  const needsReview = encrypted || mergedText.trim().length < 20 || classification.confidence < 0.55;
+  const genericFacts = extractGenericTravelFacts(mergedText, classification.category);
+  const providerParsing = extractProviderTravelFacts(mergedText, {
+    provider: options.provider,
+    fileName: options.fileName,
+    mimeType: options.mimeType || 'application/pdf',
+    category: classification.category
+  });
+  const facts = Object.freeze({
+    ...genericFacts,
+    ...(providerParsing.facts || {}),
+    ...(providerParsing.provider ? { provider: providerParsing.provider } : {}),
+    ...(providerParsing.status ? { providerStatus: providerParsing.status } : {}),
+    ...(providerParsing.items?.length ? { itemCount: providerParsing.items.length } : {})
+  });
+  const providerConfidence = providerParsing.recognized ? providerParsing.confidence || 0 : 0;
+  const effectiveConfidence = Math.max(classification.confidence, providerConfidence);
+  const needsReview = encrypted || mergedText.trim().length < 20 || effectiveConfidence < 0.55;
 
   return Object.freeze({
     importId: randomUUID(),
@@ -36,23 +52,27 @@ export function ingestPdfBuffer(buffer, options = {}) {
     document: {
       fileName: sanitizeFileName(options.fileName || 'document.pdf'),
       mimeType: 'application/pdf',
+      declaredMimeType: options.mimeType || 'application/pdf',
       sizeBytes: buffer.length,
       sha256,
-      category: classification.category,
-      categoryConfidence: classification.confidence,
+      category: providerParsing.category || classification.category,
+      categoryConfidence: effectiveConfidence,
       classificationEvidence: classification.evidence,
       encrypted,
       textExtractionMethod: extracted.method,
-      warnings: extracted.warnings
+      warnings: [...new Set([...(extracted.warnings || []), ...(providerParsing.warnings || [])])],
+      providerParser: providerParsing.recognized ? providerParsing.provider : null
     },
     facts,
+    items: providerParsing.items || [],
+    providerParsing,
     textPreview: mergedText.replace(/\s+/g, ' ').trim().slice(0, 1000),
     review: {
       required: needsReview,
       reasons: [
         ...(encrypted ? ['PDF_ENCRYPTED'] : []),
         ...(mergedText.trim().length < 20 ? ['TEXT_EXTRACTION_INSUFFICIENT'] : []),
-        ...(classification.confidence < 0.55 ? ['CLASSIFICATION_LOW_CONFIDENCE'] : [])
+        ...(effectiveConfidence < 0.55 ? ['CLASSIFICATION_LOW_CONFIDENCE'] : [])
       ]
     }
   });
@@ -112,7 +132,7 @@ export function extractGenericTravelFacts(text = '', category = 'OTHER') {
     facts.currency = detectCurrency(currency[0]);
   }
 
-  const seat = firstMatch(compact, [/(?:seat|assento)\s*[:\-]?\s*([0-9]{1,3}[A-Z])/i]);
+  const seat = firstMatch(compact, [/(?:seat|assento|poltrona)\s*[:\-]?\s*([0-9]{1,3}[A-Z]?)/i]);
   if (seat) facts.seat = seat.toUpperCase();
   const gate = firstMatch(compact, [/(?:gate|port[aã]o)\s*[:\-]?\s*([A-Z0-9]{1,6})/i]);
   if (gate) facts.gate = gate.toUpperCase();
