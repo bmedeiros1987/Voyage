@@ -42,9 +42,32 @@ test('Gmail candidate classifier detects provider, travel facts and PDF attachme
   });
   assert.equal(candidate.candidate, true);
   assert.equal(candidate.category, 'LODGING');
-  assert.equal(candidate.provider, 'Booking.com');
+  assert.equal(candidate.provider, 'BOOKING_COM');
   assert.equal(candidate.facts.confirmationCode, 'ABC123');
+  assert.equal(candidate.eventState, 'CONFIRMED');
   assert.equal(candidate.attachmentPdfCount, 1);
+});
+
+test('Gmail classifier treats cancellation as a mutation of an existing reservation', () => {
+  const candidate = classifyGmailCandidate({
+    from: 'Booking.com <noreply@booking.com>',
+    subject: 'Sua reserva foi cancelada',
+    snippet: 'Número de confirmação: 123456789. Cancelamento concluído.'
+  });
+  assert.equal(candidate.eventState, 'CANCELLED');
+  assert.equal(candidate.mutationIntent, 'CANCEL_MATCHED_RESERVATION');
+});
+
+test('Gmail classifier detects ICS even when providers may send unusual MIME types', () => {
+  const candidate = classifyGmailCandidate({
+    from: 'myIDTravel <noreply@example.test>',
+    subject: 'Travel confirmation',
+    bodyPreview: 'ZED - R2 Standby',
+    attachmentNames: ['MyIDTravelFlight1.ics']
+  });
+  assert.equal(candidate.candidate, true);
+  assert.equal(candidate.provider, 'MYIDTRAVEL');
+  assert.equal(candidate.attachmentIcsCount, 1);
 });
 
 test('Gmail Pub/Sub envelope requires email and history cursor', () => {
