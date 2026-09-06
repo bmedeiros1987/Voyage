@@ -10,6 +10,7 @@ import { buildTripGraph, matchReservation, suggestTripForReservation } from './r
 import { buildAutomaticPlan, buildExportManifest, collaborationCapabilities, normalizeExternalItinerary, plannerCapabilities } from './trip-planner.mjs';
 import { buildDietaryTravelCard, buildGroupDietarySummary, dietaryCapabilities, evaluateFoodCandidate } from './dietary-profile.mjs';
 import { assessPlanQuality, buildPlanningBrief, buildPlanningStrategy, buildPreferenceLearningEvent, buildReplanDecision, plannerBrainCapabilities } from './planner-brain.mjs';
+import { handleCrewCheckIntegrationHttp } from './crewcheck-http-integration.mjs';
 
 const config = getRuntimeConfig();
 const MAX_JSON_BYTES = 256 * 1024;
@@ -30,6 +31,8 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (await handleCrewCheckIntegrationHttp(req, res, path)) return;
+
     if (req.method === 'GET' && path === '/health') {
       return json(res, 200, {
         status: 'ok',
@@ -39,6 +42,7 @@ const server = http.createServer(async (req, res) => {
         database: config.databaseConfigured ? 'configured' : 'not_configured',
         googleLogin: config.google.loginConfigured ? 'configured' : 'not_configured',
         gmail: config.google.gmailConfigured ? 'configured' : 'not_configured',
+        crewCheckIntegration: config.sharedCrewCheck.configured ? 'configured' : 'not_configured',
         universalImporter: 'enabled',
         automaticTripPlanner: 'enabled',
         plannerBrain: 'enabled',
@@ -300,7 +304,7 @@ function setSecurityHeaders(res, requestId) {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Request-Id', requestId);
   res.setHeader('Access-Control-Allow-Origin', corsOrigin());
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Voyage-Filename, X-Voyage-Category, X-Voyage-Provider');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Voyage-Filename, X-Voyage-Category, X-Voyage-Provider, X-CrewCheck-Service-Token');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
 }
 
@@ -357,13 +361,15 @@ function namedError(message) {
 function publicErrorCode(error) {
   const known = new Set([
     'request_body_too_large', 'invalid_json', 'unsupported_content_type', 'pdf_buffer_required', 'empty_pdf',
-    'pdf_too_large', 'invalid_pdf_signature', 'gmail_pubsub_message_data_required', 'gmail_pubsub_data_invalid', 'gmail_pubsub_payload_incomplete'
+    'pdf_too_large', 'invalid_pdf_signature', 'gmail_pubsub_message_data_required', 'gmail_pubsub_data_invalid', 'gmail_pubsub_payload_incomplete',
+    'crewcheck_bridge_body_too_large', 'crewcheck_bridge_invalid_json'
   ]);
   return known.has(error?.message) ? error.message : 'internal_error';
 }
 
 function statusForError(error) {
-  if (['request_body_too_large', 'pdf_too_large'].includes(error?.message)) return 413;
+  if (Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 600) return error.statusCode;
+  if (['request_body_too_large', 'pdf_too_large', 'crewcheck_bridge_body_too_large'].includes(error?.message)) return 413;
   if (['unsupported_content_type'].includes(error?.message)) return 415;
   if (publicErrorCode(error) !== 'internal_error') return 400;
   return 500;
