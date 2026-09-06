@@ -9,6 +9,7 @@ import { buildGmailDiscoveryQuery, classifyGmailCandidate, gmailRealtimeContract
 import { buildTripGraph, matchReservation, suggestTripForReservation } from './reservation-matcher.mjs';
 import { buildAutomaticPlan, buildExportManifest, collaborationCapabilities, normalizeExternalItinerary, plannerCapabilities } from './trip-planner.mjs';
 import { buildDietaryTravelCard, buildGroupDietarySummary, dietaryCapabilities, evaluateFoodCandidate } from './dietary-profile.mjs';
+import { assessPlanQuality, buildPlanningBrief, buildPlanningStrategy, buildPreferenceLearningEvent, buildReplanDecision, plannerBrainCapabilities } from './planner-brain.mjs';
 
 const config = getRuntimeConfig();
 const MAX_JSON_BYTES = 256 * 1024;
@@ -40,6 +41,7 @@ const server = http.createServer(async (req, res) => {
         gmail: config.google.gmailConfigured ? 'configured' : 'not_configured',
         universalImporter: 'enabled',
         automaticTripPlanner: 'enabled',
+        plannerBrain: 'enabled',
         dietarySafety: 'enabled',
         webShell: 'enabled',
         timestamp: new Date().toISOString()
@@ -147,9 +149,45 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, plannerCapabilities());
     }
 
+    if (req.method === 'GET' && path === '/api/v1/planner/brain/capabilities') {
+      return json(res, 200, plannerBrainCapabilities());
+    }
+
+    if (req.method === 'POST' && path === '/api/v1/planner/brain/brief') {
+      const body = await readJson(req, MAX_JSON_BYTES);
+      return json(res, 200, buildPlanningBrief(body));
+    }
+
+    if (req.method === 'POST' && path === '/api/v1/planner/brain/strategy') {
+      const body = await readJson(req, MAX_JSON_BYTES);
+      return json(res, 200, buildPlanningStrategy(body));
+    }
+
+    if (req.method === 'POST' && path === '/api/v1/planner/brain/assess') {
+      const body = await readJson(req, MAX_JSON_BYTES);
+      return json(res, 200, assessPlanQuality(body));
+    }
+
+    if (req.method === 'POST' && path === '/api/v1/planner/brain/replan') {
+      const body = await readJson(req, MAX_JSON_BYTES);
+      return json(res, 200, buildReplanDecision(body));
+    }
+
+    if (req.method === 'POST' && path === '/api/v1/planner/brain/learning-event') {
+      const body = await readJson(req, MAX_JSON_BYTES);
+      return json(res, 200, buildPreferenceLearningEvent(body));
+    }
+
     if (req.method === 'POST' && path === '/api/v1/planner/preview') {
       const body = await readJson(req, MAX_JSON_BYTES);
-      return json(res, 200, buildAutomaticPlan(body));
+      const brief = buildPlanningBrief(body);
+      return json(res, 200, {
+        ...buildAutomaticPlan(body),
+        brain: {
+          brief,
+          strategy: buildPlanningStrategy({ ...body, brief })
+        }
+      });
     }
 
     if (req.method === 'POST' && path === '/api/v1/planner/external-itinerary/preview') {
