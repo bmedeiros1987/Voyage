@@ -14,14 +14,13 @@ Voyage by CrewCheck é o produto de jornada para passageiros do ecossistema Crew
 - Passageiros e tripulantes sempre informam quantos dias realmente querem usar; a escala do CrewCheck é contexto, não presunção.
 - Um documento desconhecido nunca é descartado silenciosamente: ele entra como `OTHER` ou `NEEDS_REVIEW`.
 - O planejador nunca inventa notas, horários de funcionamento, preços, distância ou tempo de deslocamento: fatos externos ausentes permanecem desconhecidos.
-- Restrições alimentares de segurança nunca são reduzidas a preferências: alergias e incerteza relevante bloqueiam recomendação automática até validação suficiente.
 
 ## Fundação atual
 
 ```text
 Voyage
 ├── src/                  # voyage-api / Render
-├── db/                   # schema TiDB + importer + planner + dietary safety
+├── db/                   # schema TiDB + importer + planner
 ├── app/
 │   ├── www/              # PWA premium + importação offline-first
 │   ├── resources/        # ícone e splash
@@ -29,6 +28,7 @@ Voyage
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   ├── GOOGLE_COMPLIANCE.md
+│   ├── GOOGLE_MAPS_IMPORT.md
 │   ├── UNIVERSAL_IMPORTER.md
 │   ├── AUTOMATIC_TRIP_PLANNER.md
 │   └── DIETARY_SAFETY.md
@@ -85,7 +85,7 @@ O contrato atual contempla:
 
 - café da manhã no hotel, em locais recomendados, flexível ou dispensado;
 - janelas de café, almoço e jantar;
-- restrições alimentares;
+- preferências/restrições alimentares para descoberta de locais de culinária;
 - trabalho, reuniões e blocos de trabalho remoto;
 - necessidade de coworking, Wi-Fi confiável e ambiente silencioso;
 - sono, descanso e tempo livre protegido;
@@ -106,24 +106,28 @@ Fontes externas previstas para roteiro: Google Maps compartilhado, Google My Map
 
 O documento detalhado está em `docs/AUTOMATIC_TRIP_PLANNER.md`.
 
-### Dietary Safety
+## Google Maps / My Maps
 
-O Voyage mantém um perfil alimentar individual por viajante e diferencia:
+Voyage passa a tratar Google Maps como fonte autorizada de planejamento, não como página a ser raspada.
 
-- preferência alimentar;
-- intolerância;
-- alergia;
-- alergia severa;
-- risco de contaminação cruzada;
-- necessidade de confirmação por menu/equipe do estabelecimento.
+Caminhos previstos:
 
-A taxonomia inclui, entre outros, glúten/trigo, leite/lactose, ovo, amendoim, castanhas, soja, gergelim, peixe, frutos do mar, vegetariano, vegano, pescetariano, halal, kosher, sem porco e sem álcool, além de restrições personalizadas.
+- Google Data Portability API para mapas criados no **My Maps**;
+- Google Data Portability API para **coleções salvas** do usuário;
+- exportações de viagens/rotas fixadas no Maps quando o recurso estiver disponível no projeto Google;
+- links de rota compartilhados pelo usuário;
+- KML/KMZ exportado do My Maps.
 
-Para alergias, fatos desconhecidos permanecem desconhecidos. O app não interpreta nota alta, popularidade ou tipo de culinária como prova de segurança. Se o status do alergênico ou de contaminação cruzada for necessário e estiver `UNKNOWN`, o estabelecimento é excluído da recomendação automática até que a incerteza seja resolvida.
+Escopos iniciais verificados:
 
-Em viagens em grupo, cada participante mantém seu perfil. Para uma refeição compartilhada, o planejador aplica a restrição mais rigorosa necessária ao grupo, sem expor detalhes individuais sensíveis sem compartilhamento explícito.
+```text
+https://www.googleapis.com/auth/dataportability.mymaps.maps
+https://www.googleapis.com/auth/dataportability.saved.collections
+```
 
-O app também prepara um cartão de restrições para acesso offline durante a viagem. Veja `docs/DIETARY_SAFETY.md`.
+O conector normaliza esses dados em `ExternalItineraryImport` e depois usa Places/Routes para resolver locais, tempos e distâncias antes de o planejador sugerir uma versão otimizada. O roteiro original importado é preservado para comparação e rollback.
+
+Veja `docs/GOOGLE_MAPS_IMPORT.md`.
 
 ## API
 
@@ -173,10 +177,6 @@ Schemas:
 - `db/002_universal_importer.sql`
 - `db/003_trip_planner.sql`
 - `db/004_dietary_safety.sql`
-
-A terceira migração adiciona perfis do planejador, versões e itens de roteiro, colaboradores, propostas, comentários, votos, importação de roteiros externos, sinais comunitários de locais e jobs de exportação.
-
-A quarta migração adiciona perfis alimentares, restrições, evidências alimentares de estabelecimentos, snapshots por viagem e checagens de segurança de refeições.
 
 A aplicação recebe a conexão por:
 
@@ -249,16 +249,17 @@ Segredos ficam apenas no provedor de execução/secret manager.
 1. Persistência real da API no TiDB usando driver/ORM versionado.
 2. Google Sign-In production-ready.
 3. OAuth Gmail real + History API + Pub/Sub Watch.
-4. OCR para PDFs escaneados e imagens.
-5. Place/Maps provider para horários, notas, rotas, matriz real de deslocamentos e evidências alimentares do planejador.
-6. Persistência e execução do planejador automático com replanejamento dinâmico.
-7. Cowork em tempo real com convites, propostas, comentários e votos.
-8. Geradores reais de PDF, DOCX e XLSX a partir do snapshot do roteiro.
-9. Outlook/Microsoft Graph, Booking Data Portability, CVC e Onfly como novos `TravelSource`.
-10. CrewCheck Availability API para tripulantes.
-11. Guardian + Mobility + Flight Intelligence.
-12. VoyMiles e benefícios.
-13. Release Android assinado e publicação nas lojas.
+4. Google Data Portability para My Maps/coleções salvas e importação real para o planner.
+5. OCR para PDFs escaneados e imagens.
+6. Place/Maps provider para horários, notas, rotas e matriz real de deslocamentos do planejador.
+7. Persistência e execução do planejador automático com replanejamento dinâmico.
+8. Cowork em tempo real com convites, propostas, comentários e votos.
+9. Geradores reais de PDF, DOCX e XLSX a partir do snapshot do roteiro.
+10. Outlook/Microsoft Graph, Booking Data Portability, CVC e Onfly como novos `TravelSource`.
+11. CrewCheck Availability API para tripulantes.
+12. Guardian + Mobility + Flight Intelligence.
+13. VoyMiles e benefícios.
+14. Release Android assinado e publicação nas lojas.
 
 ## Hotel Intelligence
 
