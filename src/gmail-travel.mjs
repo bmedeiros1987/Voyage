@@ -21,6 +21,7 @@ export function gmailRealtimeContract() {
       'For each Pub/Sub notification fetch Gmail history since lastHistoryId',
       'Fetch only changed candidate messages and attachments needed for travel extraction',
       'Normalize email body, PDF, ICS and sniffed travel attachments through the Universal Travel Importer',
+      'Distinguish cancellation requested from cancellation confirmed before changing reservation state',
       'Detect confirmation, modification and cancellation and update the matched reservation instead of duplicating it',
       'Deduplicate by provider message id, attachment digest and reservation fingerprint',
       'Renew watch before expiration and fail closed when history continuity is lost'
@@ -52,6 +53,13 @@ export function classifyGmailCandidate(input = {}) {
   const genericFacts = extractGenericTravelFacts([input.subject, input.snippet, input.bodyPreview].filter(Boolean).join(' '), providerParsing.category || taxonomy.category);
   const eventState = detectReservationEventState(haystack, providerParsing.status);
   const facts = Object.freeze({ ...genericFacts, ...(providerParsing.facts || {}), ...(provider ? { provider } : {}), reservationEventState: eventState });
+  const mutationIntent = eventState === 'CANCELLED'
+    ? 'CANCEL_MATCHED_RESERVATION'
+    : eventState === 'CANCELLATION_REQUESTED'
+      ? 'MARK_CANCELLATION_PENDING'
+      : eventState === 'MODIFIED'
+        ? 'UPDATE_MATCHED_RESERVATION'
+        : 'UPSERT_RESERVATION';
 
   return Object.freeze({
     candidate: confidence >= 0.5 || matchedTerms.length >= 2 || providerSignal,
@@ -59,7 +67,7 @@ export function classifyGmailCandidate(input = {}) {
     category: providerParsing.category || taxonomy.category,
     provider,
     eventState,
-    mutationIntent: eventState === 'CANCELLED' ? 'CANCEL_MATCHED_RESERVATION' : eventState === 'MODIFIED' ? 'UPDATE_MATCHED_RESERVATION' : 'UPSERT_RESERVATION',
+    mutationIntent,
     facts,
     providerParsing,
     evidence: [...new Set([...taxonomy.evidence, ...matchedTerms, ...(hasPdf ? ['pdf_attachment'] : []), ...(hasIcs ? ['ics_attachment'] : []), ...(providerSignal ? ['known_travel_provider'] : [])])].slice(0, 14),
@@ -71,7 +79,8 @@ export function classifyGmailCandidate(input = {}) {
 
 export function detectReservationEventState(value = '', providerStatus = null) {
   const text = clean(value);
-  if (providerStatus === 'CANCELLED' || /cancel(?:led|lation|amento|ada|ado)|reserva cancelada|booking cancelled/.test(text)) return 'CANCELLED';
+  if (/cancellation request|request to cancel|pedido de cancelamento|solicita[cç][aã]o de cancelamento|solicitou cancelar|received your request to cancel|recebemos (?:o )?seu pedido de cancelar/.test(text)) return 'CANCELLATION_REQUESTED';
+  if (providerStatus === 'CANCELLED' || /cancelled successfully|cancelamento concluido|cancelamento confirmado|reserva (?:foi )?cancelada|booking cancelled|canceled successfully/.test(text)) return 'CANCELLED';
   if (providerStatus === 'MODIFIED' || /alterad|modificad|updated|changed|mudan[cç]a na reserva|booking update/.test(text)) return 'MODIFIED';
   if (/standby|listado|listed|zed\s*-\s*r\d/.test(text)) return 'STANDBY_OR_LISTED';
   if (/confirmad|confirmed|emitid|issued|voucher/.test(text)) return 'CONFIRMED';
