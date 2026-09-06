@@ -33,7 +33,7 @@ test('encrypted PDF is accepted but fails closed into review', () => {
   assert.ok(result.review.reasons.includes('PDF_ENCRYPTED'));
 });
 
-test('Gmail candidate classifier detects travel email and PDF attachments', () => {
+test('Gmail candidate classifier detects provider, travel facts and PDF attachments', () => {
   const candidate = classifyGmailCandidate({
     from: 'Booking.com <noreply@booking.com>',
     subject: 'Sua reserva de hotel está confirmada',
@@ -42,6 +42,8 @@ test('Gmail candidate classifier detects travel email and PDF attachments', () =
   });
   assert.equal(candidate.candidate, true);
   assert.equal(candidate.category, 'LODGING');
+  assert.equal(candidate.provider, 'Booking.com');
+  assert.equal(candidate.facts.confirmationCode, 'ABC123');
   assert.equal(candidate.attachmentPdfCount, 1);
 });
 
