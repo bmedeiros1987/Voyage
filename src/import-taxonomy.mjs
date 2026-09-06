@@ -1,15 +1,15 @@
 const CATEGORY_RULES = [
   ['BOARDING_PASS', ['boarding pass', 'cartão de embarque', 'cartao de embarque', 'tarjeta de embarque', 'seat', 'assento', 'gate', 'portão', 'portao', 'boarding group']],
-  ['AIR_TRAVEL', ['flight', 'voo', 'airline', 'companhia aérea', 'companhia aerea', 'e-ticket', 'eticket', 'bilhete aéreo', 'bilhete aereo', 'pnr', 'record locator']],
+  ['AIR_TRAVEL', ['flight', 'voo', 'airline', 'companhia aérea', 'companhia aerea', 'e-ticket', 'eticket', 'bilhete aéreo', 'bilhete aereo', 'pnr', 'record locator', 'itinerary', 'itinerário']],
   ['LODGING', ['hotel', 'hostel', 'resort', 'pousada', 'check-in', 'check in', 'check-out', 'check out', 'acomodação', 'acomodacao', 'quarto', 'room']],
-  ['CAR_RENTAL', ['car rental', 'rent a car', 'aluguel de carro', 'locação de veículo', 'locacao de veiculo', 'rental car', 'pickup location', 'drop-off location']],
+  ['CAR_RENTAL', ['car rental', 'rent a car', 'aluguel de carro', 'locação de veículo', 'locacao de veiculo', 'rental car', 'pickup location', 'drop-off location', 'contrato de aluguel de carros']],
   ['RAIL', ['train', 'trem', 'rail', 'ferrovia', 'estação', 'estacao', 'platform', 'plataforma', 'coach', 'vagão', 'vagao']],
-  ['BUS', ['bus', 'ônibus', 'onibus', 'rodoviária', 'rodoviaria', 'terminal rodoviário', 'terminal rodoviario']],
+  ['BUS', ['bus', 'ônibus', 'onibus', 'rodoviária', 'rodoviaria', 'terminal rodoviário', 'terminal rodoviario', 'bilhete de passagem eletrônico', 'bp-e', 'poltrona']],
   ['FERRY', ['ferry', 'balsa', 'ferryboat', 'embarcação', 'embarcacao', 'porto', 'pier']],
   ['TRANSFER', ['transfer', 'shuttle', 'traslado', 'motorista', 'pickup service', 'airport transfer']],
-  ['EVENT_TICKET', ['concert', 'show', 'festival', 'ingresso', 'ticket', 'arena', 'estádio', 'estadio', 'admission', 'entrada']],
+  ['EVENT_TICKET', ['concert', 'show', 'festival', 'ingresso', 'ticket', 'arena', 'estádio', 'estadio', 'admission', 'entrada', 'código do ingresso']],
   ['ATTRACTION_TICKET', ['ingresso para museu', 'museum ticket', 'museum', 'museu', 'aquarium', 'aquário', 'aquario', 'theme park', 'parque', 'attraction', 'atração', 'atracao', 'monument', 'monumento']],
-  ['TOUR', ['tour', 'excursion', 'excursão', 'excursao', 'guided visit', 'visita guiada', 'walking tour', 'passeio']],
+  ['TOUR', ['tour', 'excursion', 'excursão', 'excursao', 'guided visit', 'visita guiada', 'walking tour', 'passeio', 'reserva de atividade']],
   ['RESTAURANT', ['restaurant', 'restaurante', 'reservation', 'reserva de mesa', 'table for', 'mesa para']],
   ['TRAVEL_INSURANCE', ['travel insurance', 'seguro viagem', 'seguro de viagem', 'policy number', 'apólice', 'apolice', 'coverage', 'cobertura']],
   ['LOUNGE', ['lounge', 'sala vip', 'vip lounge']],
@@ -58,11 +58,14 @@ export function classifyTravelDocument(text = '', hintedCategory = null) {
 
 export function supportedImportCapabilities() {
   return Object.freeze({
-    acceptedMimeTypes: ['application/pdf'],
+    acceptedMimeTypes: ['application/pdf', 'text/calendar', 'application/octet-stream'],
+    acceptedExtensions: ['.pdf', '.ics'],
     maxPdfBytes: 15 * 1024 * 1024,
+    maxAttachmentBytes: 20 * 1024 * 1024,
     categories: DOCUMENT_CATEGORIES,
-    sourceModes: ['MANUAL_PDF', 'MANUAL_ENTRY', 'GMAIL_REALTIME'],
-    designPrinciple: 'Unknown documents remain importable as OTHER and are never discarded solely because the classifier is unsure.'
+    sourceModes: ['MANUAL_PDF', 'MANUAL_ENTRY', 'GMAIL_REALTIME', 'GMAIL_ATTACHMENT', 'ICALENDAR'],
+    contentSniffing: true,
+    designPrinciple: 'Unknown documents remain importable as OTHER/NEEDS_REVIEW. File signatures and content matter more than unreliable provider MIME labels.'
   });
 }
 
