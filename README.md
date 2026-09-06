@@ -14,13 +14,14 @@ Voyage by CrewCheck é o produto de jornada para passageiros do ecossistema Crew
 - Passageiros e tripulantes sempre informam quantos dias realmente querem usar; a escala do CrewCheck é contexto, não presunção.
 - Um documento desconhecido nunca é descartado silenciosamente: ele entra como `OTHER` ou `NEEDS_REVIEW`.
 - O planejador nunca inventa notas, horários de funcionamento, preços, distância ou tempo de deslocamento: fatos externos ausentes permanecem desconhecidos.
+- Restrições alimentares de segurança nunca são reduzidas a preferências: alergias e incerteza relevante bloqueiam recomendação automática até validação suficiente.
 
 ## Fundação atual
 
 ```text
 Voyage
 ├── src/                  # voyage-api / Render
-├── db/                   # schema TiDB + importer + planner
+├── db/                   # schema TiDB + importer + planner + dietary safety
 ├── app/
 │   ├── www/              # PWA premium + importação offline-first
 │   ├── resources/        # ícone e splash
@@ -29,7 +30,8 @@ Voyage
 │   ├── ARCHITECTURE.md
 │   ├── GOOGLE_COMPLIANCE.md
 │   ├── UNIVERSAL_IMPORTER.md
-│   └── AUTOMATIC_TRIP_PLANNER.md
+│   ├── AUTOMATIC_TRIP_PLANNER.md
+│   └── DIETARY_SAFETY.md
 └── .github/workflows/
     ├── ci.yml
     └── android-apk.yml
@@ -104,6 +106,25 @@ Fontes externas previstas para roteiro: Google Maps compartilhado, Google My Map
 
 O documento detalhado está em `docs/AUTOMATIC_TRIP_PLANNER.md`.
 
+### Dietary Safety
+
+O Voyage mantém um perfil alimentar individual por viajante e diferencia:
+
+- preferência alimentar;
+- intolerância;
+- alergia;
+- alergia severa;
+- risco de contaminação cruzada;
+- necessidade de confirmação por menu/equipe do estabelecimento.
+
+A taxonomia inclui, entre outros, glúten/trigo, leite/lactose, ovo, amendoim, castanhas, soja, gergelim, peixe, frutos do mar, vegetariano, vegano, pescetariano, halal, kosher, sem porco e sem álcool, além de restrições personalizadas.
+
+Para alergias, fatos desconhecidos permanecem desconhecidos. O app não interpreta nota alta, popularidade ou tipo de culinária como prova de segurança. Se o status do alergênico ou de contaminação cruzada for necessário e estiver `UNKNOWN`, o estabelecimento é excluído da recomendação automática até que a incerteza seja resolvida.
+
+Em viagens em grupo, cada participante mantém seu perfil. Para uma refeição compartilhada, o planejador aplica a restrição mais rigorosa necessária ao grupo, sem expor detalhes individuais sensíveis sem compartilhamento explícito.
+
+O app também prepara um cartão de restrições para acesso offline durante a viagem. Veja `docs/DIETARY_SAFETY.md`.
+
 ## API
 
 Bootstrap Node sem dependências externas para reduzir risco no primeiro deploy do Render. O serviço escuta `process.env.PORT` em `0.0.0.0`.
@@ -151,8 +172,11 @@ Schemas:
 - `db/001_initial.sql`
 - `db/002_universal_importer.sql`
 - `db/003_trip_planner.sql`
+- `db/004_dietary_safety.sql`
 
 A terceira migração adiciona perfis do planejador, versões e itens de roteiro, colaboradores, propostas, comentários, votos, importação de roteiros externos, sinais comunitários de locais e jobs de exportação.
+
+A quarta migração adiciona perfis alimentares, restrições, evidências alimentares de estabelecimentos, snapshots por viagem e checagens de segurança de refeições.
 
 A aplicação recebe a conexão por:
 
@@ -226,7 +250,7 @@ Segredos ficam apenas no provedor de execução/secret manager.
 2. Google Sign-In production-ready.
 3. OAuth Gmail real + History API + Pub/Sub Watch.
 4. OCR para PDFs escaneados e imagens.
-5. Place/Maps provider para horários, notas, rotas e matriz real de deslocamentos do planejador.
+5. Place/Maps provider para horários, notas, rotas, matriz real de deslocamentos e evidências alimentares do planejador.
 6. Persistência e execução do planejador automático com replanejamento dinâmico.
 7. Cowork em tempo real com convites, propostas, comentários e votos.
 8. Geradores reais de PDF, DOCX e XLSX a partir do snapshot do roteiro.
