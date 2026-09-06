@@ -1,0 +1,9 @@
+{
+  "appId": "com.crewcheck.voyage",
+  "appName": "Voyage",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}
