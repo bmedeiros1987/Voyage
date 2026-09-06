@@ -9,7 +9,7 @@ import {
 
 test('departure intelligence calculates a recommended leave time for timed commitments', () => {
   const result = buildDepartureDecision({
-    now: '2027-05-18T12:00:00Z',
+    now: '2027-05-18T11:59:00Z',
     commitment: { id: 'meeting', title: 'Reunião', startsAt: '2027-05-18T13:00:00Z', locationId: 'office' },
     route: { currentTravelMinutes: 25, baselineTravelMinutes: 20, updatedAt: '2027-05-18T11:58:00Z', provider: 'synthetic' },
     buffers: { arrivalBufferMinutes: 10, contingencyMinutes: 10 }
