@@ -33,9 +33,12 @@ export function pipelineContract() {
   return Object.freeze([
     'TravelSource',
     'DocumentNormalizer',
+    'DocumentClassifier',
     'TravelEntityExtractor',
+    'ReservationFingerprint',
     'ReservationMatcher',
-    'TripGraph'
+    'TripGraph',
+    'DomainProjections'
   ]);
 }
 
