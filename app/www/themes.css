@@ -1,0 +1,19 @@
+html[data-theme="light"] .welcome-screen {
+  background: linear-gradient(180deg, #f9f4ea, #ece4d8 58%, #f4f0e8);
+}
+
+html[data-theme="light"] .theme-pill {
+  color: var(--text);
+  background: rgba(255,255,255,.58);
+}
+
+@media (prefers-color-scheme: light) {
+  html[data-theme="auto"] .welcome-screen {
+    background: linear-gradient(180deg, #f9f4ea, #ece4d8 58%, #f4f0e8);
+  }
+
+  html[data-theme="auto"] .theme-pill {
+    color: var(--text);
+    background: rgba(255,255,255,.58);
+  }
+}
