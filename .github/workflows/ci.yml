@@ -26,9 +26,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Verify required mobile web files
         run: |
           test -f app/www/index.html
           test -f app/www/styles.css
+          test -f app/www/themes.css
+          test -f app/www/imports.css
           test -f app/www/app.js
+          test -f app/www/service-worker.js
           test -f app/capacitor.config.json
+      - name: Syntax-check mobile shell
+        run: |
+          node --check app/www/app.js
+          node --check app/www/service-worker.js
+      - name: Verify offline importer assets are cached
+        run: grep -q "imports.css" app/www/service-worker.js
