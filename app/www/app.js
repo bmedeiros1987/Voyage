@@ -1,3 +1,8 @@
+const themeOverrides = document.createElement('link');
+themeOverrides.rel = 'stylesheet';
+themeOverrides.href = './themes.css';
+document.head.appendChild(themeOverrides);
+
 const THEME_ORDER = ['auto', 'dark', 'light'];
 const THEME_LABELS = { auto: 'Automático', dark: 'Escuro', light: 'Claro' };
 const nav = document.querySelector('[data-bottom-nav]');
