@@ -26,7 +26,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-          cache: gradle
       - name: Install Capacitor dependencies
         run: npm install
       - name: Generate Android project
@@ -39,7 +38,7 @@ jobs:
         run: |
           chmod +x android/gradlew
           cd android
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
