@@ -10,6 +10,6 @@
     "build": "node scripts/build.mjs",
     "start": "node src/server.mjs",
     "test": "node --test",
-    "lint": "node --check src/server.mjs && node --check src/config.mjs && node --check src/availability.mjs && node --check src/travel-source.mjs && node --check src/import-taxonomy.mjs && node --check src/pdf-ingest.mjs && node --check src/gmail-travel.mjs && node --check src/google-gmail-client.mjs && node --check src/reservation-matcher.mjs"
+    "lint": "node --check src/server.mjs && node --check src/config.mjs && node --check src/availability.mjs && node --check src/travel-source.mjs && node --check src/import-taxonomy.mjs && node --check src/pdf-ingest.mjs && node --check src/gmail-travel.mjs && node --check src/google-gmail-client.mjs && node --check src/google-oauth.mjs && node --check src/token-crypto.mjs && node --check src/reservation-matcher.mjs"
   }
 }
