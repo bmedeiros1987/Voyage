@@ -31,6 +31,8 @@ jobs:
         run: npm install
       - name: Generate Android project
         run: npx cap add android
+      - name: Generate Voyage icon and splash assets
+        run: npm run android:assets
       - name: Synchronize web assets
         run: npx cap sync android
       - name: Build debug APK
