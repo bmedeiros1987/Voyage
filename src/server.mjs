@@ -77,9 +77,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && path === '/api/v1/imports/manual/preview') {
       const body = await readJson(req, MAX_JSON_BYTES);
       const classification = body.category || 'OTHER';
+      const userConfirmed = body.confirmedByUser === true;
       return json(res, 200, {
         importId: randomUUID(),
-        status: 'NEEDS_REVIEW',
+        status: userConfirmed ? 'PARSED' : 'NEEDS_REVIEW',
         source: 'manual',
         document: {
           category: classification,
@@ -89,9 +90,10 @@ const server = http.createServer(async (req, res) => {
           startsAt: body.startsAt || null,
           endsAt: body.endsAt || null,
           location: body.location ? String(body.location).slice(0, 300) : null,
-          notes: body.notes ? String(body.notes).slice(0, 2000) : null
+          notes: body.notes ? String(body.notes).slice(0, 2000) : null,
+          confirmedByUser: userConfirmed
         },
-        review: { required: true, reasons: ['MANUAL_CONFIRMATION_REQUIRED'] }
+        review: userConfirmed ? { required: false, reasons: [] } : { required: true, reasons: ['MANUAL_CONFIRMATION_REQUIRED'] }
       });
     }
 
@@ -181,6 +183,7 @@ function buildStaticMap() {
     ['themes.css', 'text/css; charset=utf-8'],
     ['imports.css', 'text/css; charset=utf-8'],
     ['app.js', 'text/javascript; charset=utf-8'],
+    ['import-enhancements.js', 'text/javascript; charset=utf-8'],
     ['service-worker.js', 'text/javascript; charset=utf-8'],
     ['manifest.webmanifest', 'application/manifest+json; charset=utf-8']
   ];
