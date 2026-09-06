@@ -26,6 +26,15 @@ export function getRuntimeConfig(env = process.env) {
         isConfigured(env.TOKEN_ENCRYPTION_KEY),
       pubsubConfigured:
         isConfigured(env.GOOGLE_PUBSUB_TOPIC) && isConfigured(env.GOOGLE_PUBSUB_AUDIENCE)
+    }),
+    sharedCrewCheck: Object.freeze({
+      configured:
+        isConfigured(env.CREWCHECK_SHARED_API_BASE_URL) &&
+        isConfigured(env.CREWCHECK_SHARED_SERVICES_TOKEN),
+      baseUrl: isConfigured(env.CREWCHECK_SHARED_API_BASE_URL) ? env.CREWCHECK_SHARED_API_BASE_URL.trim() : null
+    }),
+    awesomeApi: Object.freeze({
+      configured: isConfigured(env.AWESOMEAPI_API_KEY) || isConfigured(env.AWESOME_API_KEY)
     })
   });
 }
@@ -38,7 +47,10 @@ export function publicConfig(config = getRuntimeConfig()) {
     integrations: {
       googleLogin: config.google.loginConfigured,
       gmailTravelImport: config.google.gmailConfigured,
-      gmailPushSync: config.google.gmailConfigured && config.google.pubsubConfigured
+      gmailPushSync: config.google.gmailConfigured && config.google.pubsubConfigured,
+      crewCheckSharedServices: config.sharedCrewCheck.configured,
+      awesomeApiDirectFallback: config.awesomeApi.configured,
+      fxAndCepReady: config.sharedCrewCheck.configured || config.awesomeApi.configured
     }
   };
 }
