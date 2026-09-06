@@ -8,7 +8,7 @@ const CATEGORY_RULES = [
   ['FERRY', ['ferry', 'balsa', 'ferryboat', 'embarcação', 'embarcacao', 'porto', 'pier']],
   ['TRANSFER', ['transfer', 'shuttle', 'traslado', 'motorista', 'pickup service', 'airport transfer']],
   ['EVENT_TICKET', ['concert', 'show', 'festival', 'ingresso', 'ticket', 'arena', 'estádio', 'estadio', 'admission', 'entrada']],
-  ['ATTRACTION_TICKET', ['museum', 'museu', 'aquarium', 'aquário', 'aquario', 'theme park', 'parque', 'attraction', 'atração', 'atracao', 'monument', 'monumento']],
+  ['ATTRACTION_TICKET', ['ingresso para museu', 'museum ticket', 'museum', 'museu', 'aquarium', 'aquário', 'aquario', 'theme park', 'parque', 'attraction', 'atração', 'atracao', 'monument', 'monumento']],
   ['TOUR', ['tour', 'excursion', 'excursão', 'excursao', 'guided visit', 'visita guiada', 'walking tour', 'passeio']],
   ['RESTAURANT', ['restaurant', 'restaurante', 'reservation', 'reserva de mesa', 'table for', 'mesa para']],
   ['TRAVEL_INSURANCE', ['travel insurance', 'seguro viagem', 'seguro de viagem', 'policy number', 'apólice', 'apolice', 'coverage', 'cobertura']],
