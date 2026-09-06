@@ -9,6 +9,8 @@ const required = [
   'src/pdf-ingest.mjs',
   'src/gmail-travel.mjs',
   'src/google-gmail-client.mjs',
+  'src/google-oauth.mjs',
+  'src/token-crypto.mjs',
   'src/reservation-matcher.mjs',
   'db/001_initial.sql',
   'db/002_universal_importer.sql',
