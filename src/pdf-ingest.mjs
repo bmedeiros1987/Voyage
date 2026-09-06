@@ -43,6 +43,9 @@ export function ingestPdfBuffer(buffer, options = {}) {
   });
   const providerConfidence = providerParsing.recognized ? providerParsing.confidence || 0 : 0;
   const effectiveConfidence = Math.max(classification.confidence, providerConfidence);
+  const resolvedCategory = classification.category === 'BOARDING_PASS'
+    ? 'BOARDING_PASS'
+    : providerParsing.category || classification.category;
   const needsReview = encrypted || mergedText.trim().length < 20 || effectiveConfidence < 0.55;
 
   return Object.freeze({
@@ -55,7 +58,7 @@ export function ingestPdfBuffer(buffer, options = {}) {
       declaredMimeType: options.mimeType || 'application/pdf',
       sizeBytes: buffer.length,
       sha256,
-      category: providerParsing.category || classification.category,
+      category: resolvedCategory,
       categoryConfidence: effectiveConfidence,
       classificationEvidence: classification.evidence,
       encrypted,
