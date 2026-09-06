@@ -13,13 +13,14 @@ Voyage by CrewCheck é o produto de jornada para passageiros do ecossistema Crew
 - O Concierge transforma dados estruturados em decisões úteis, sem substituir motores determinísticos.
 - Passageiros e tripulantes sempre informam quantos dias realmente querem usar; a escala do CrewCheck é contexto, não presunção.
 - Um documento desconhecido nunca é descartado silenciosamente: ele entra como `OTHER` ou `NEEDS_REVIEW`.
+- O planejador nunca inventa notas, horários de funcionamento, preços, distância ou tempo de deslocamento: fatos externos ausentes permanecem desconhecidos.
 
 ## Fundação atual
 
 ```text
 Voyage
 ├── src/                  # voyage-api / Render
-├── db/                   # schema TiDB + Universal Importer
+├── db/                   # schema TiDB + importer + planner
 ├── app/
 │   ├── www/              # PWA premium + importação offline-first
 │   ├── resources/        # ícone e splash
@@ -27,7 +28,8 @@ Voyage
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   ├── GOOGLE_COMPLIANCE.md
-│   └── UNIVERSAL_IMPORTER.md
+│   ├── UNIVERSAL_IMPORTER.md
+│   └── AUTOMATIC_TRIP_PLANNER.md
 └── .github/workflows/
     ├── ci.yml
     └── android-apk.yml
@@ -72,6 +74,35 @@ TravelSource
 ```
 
 A deduplicação/matching usa confirmação, provider, voo, rota, data, título e fingerprint determinístico. O TripGraph ordena reservas e cria relações temporais/operacionais para que Guardian, Mobility, Wallet e Hotel Intelligence usem a mesma fonte canônica.
+
+## Planejador automático de viagem
+
+A fundação do planejador combina preferências pessoais, compromissos, reservas e sinais verificados para montar um roteiro compatível com a vida real do usuário.
+
+O contrato atual contempla:
+
+- café da manhã no hotel, em locais recomendados, flexível ou dispensado;
+- janelas de café, almoço e jantar;
+- restrições alimentares;
+- trabalho, reuniões e blocos de trabalho remoto;
+- necessidade de coworking, Wi-Fi confiável e ambiente silencioso;
+- sono, descanso e tempo livre protegido;
+- academia, corrida, caminhada, yoga, wellness e atividades alternativas;
+- ritmo relaxado, equilibrado ou intenso;
+- interesses pessoais e atividades a evitar;
+- orçamento;
+- necessidades de acessibilidade;
+- compromissos bloqueados que o automático não pode mover;
+- notas verificadas de provedores e sinais agregados da comunidade Voyage;
+- matriz de tempo/distância fornecida por um provedor de mapas;
+- reordenação de paradas para reduzir deslocamentos inúteis;
+- importação de roteiro externo por link compartilhado ou arquivo exportado;
+- planejamento colaborativo com versões, propostas, comentários e votos;
+- exportação canônica para PDF, Word (`.docx`) e Excel (`.xlsx`).
+
+Fontes externas previstas para roteiro: Google Maps compartilhado, Google My Maps/exportações suportadas, Apple Maps, Waze, KML/KMZ, GPX, GeoJSON, ICS e lista manual. Listas privadas de terceiros não serão raspadas: apenas API oficial, link compartilhado, exportação do usuário ou autorização suportada pelo provedor.
+
+O documento detalhado está em `docs/AUTOMATIC_TRIP_PLANNER.md`.
 
 ## API
 
@@ -119,8 +150,9 @@ Schemas:
 
 - `db/001_initial.sql`
 - `db/002_universal_importer.sql`
+- `db/003_trip_planner.sql`
 
-A segunda migração adiciona jobs/artefatos de importação, fatos de viagem, estado do Gmail Watch, índice de mensagens e relações entre reservas.
+A terceira migração adiciona perfis do planejador, versões e itens de roteiro, colaboradores, propostas, comentários, votos, importação de roteiros externos, sinais comunitários de locais e jobs de exportação.
 
 A aplicação recebe a conexão por:
 
@@ -194,11 +226,15 @@ Segredos ficam apenas no provedor de execução/secret manager.
 2. Google Sign-In production-ready.
 3. OAuth Gmail real + History API + Pub/Sub Watch.
 4. OCR para PDFs escaneados e imagens.
-5. Outlook/Microsoft Graph, Booking Data Portability, CVC e Onfly como novos `TravelSource`.
-6. CrewCheck Availability API para tripulantes.
-7. Guardian + Mobility + Flight Intelligence.
-8. VoyMiles e benefícios.
-9. Release Android assinado e publicação nas lojas.
+5. Place/Maps provider para horários, notas, rotas e matriz real de deslocamentos do planejador.
+6. Persistência e execução do planejador automático com replanejamento dinâmico.
+7. Cowork em tempo real com convites, propostas, comentários e votos.
+8. Geradores reais de PDF, DOCX e XLSX a partir do snapshot do roteiro.
+9. Outlook/Microsoft Graph, Booking Data Portability, CVC e Onfly como novos `TravelSource`.
+10. CrewCheck Availability API para tripulantes.
+11. Guardian + Mobility + Flight Intelligence.
+12. VoyMiles e benefícios.
+13. Release Android assinado e publicação nas lojas.
 
 ## Hotel Intelligence
 
