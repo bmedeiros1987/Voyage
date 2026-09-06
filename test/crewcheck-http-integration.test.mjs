@@ -101,3 +101,15 @@ test('CrewCheck preview rejects secret and identity-like forbidden fields', asyn
     else process.env.CREWCHECK_SHARED_SERVICES_TOKEN = original;
   }
 });
+
+test('main server extension bridge mounts the Voyage intelligence API', async () => {
+  const req = request({ method: 'GET' });
+  const res = response();
+  const handled = await handleCrewCheckIntegrationHttp(req, res, '/api/v1/journey/command-center/capabilities');
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const payload = JSON.parse(res.body);
+  assert.equal(payload.mutationPolicy.applyAutomatically, false);
+  assert.ok(payload.layers.includes('BAGGAGE'));
+  assert.ok(payload.layers.includes('BUDGET'));
+});
