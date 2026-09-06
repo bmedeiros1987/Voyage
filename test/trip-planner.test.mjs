@@ -43,7 +43,7 @@ test('planner ranks verified community and preference signals without inventing 
   assert.equal(result.recommendations.rankedCandidates[0].id, 'museum');
   assert.equal(result.recommendations.routeSuggestion.stops[0].candidateId, 'museum');
   assert.equal(result.recommendations.routeSuggestion.stops[0].travelTimeKnown, false);
-  assert.equal(result.recommendations.routeSuggestion.requiresDistanceProvider, false);
+  assert.equal(result.recommendations.routeSuggestion.requiresDistanceProvider, true);
 });
 
 test('route preview uses supplied travel matrix and prefers reasonable next stop', () => {
