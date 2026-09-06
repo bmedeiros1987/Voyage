@@ -19,12 +19,18 @@ const PHASES = [
 
 export function plannerBrainCapabilities() {
   return {
-    brainVersion: '1.0',
+    brainVersion: '1.1',
     phases: PHASES,
     dayTypes: [...DAY_TYPES],
     tripStyles: [...TRIP_STYLES],
     changeTypes: [...CHANGE_TYPES],
     learnsFrom: ['EXPLICIT_PREFERENCE', 'PIN', 'UNPIN', 'ACCEPT', 'REJECT', 'VISITED', 'SKIPPED', 'RATING', 'MANUAL_EDIT'],
+    approvalPolicy: {
+      requiresExplicitUserApprovalForItineraryMutation: true,
+      proposalFirst: true,
+      showDiffBeforeApproval: true,
+      automaticMutationAllowed: false
+    },
     rules: [
       'Facts beat guesses: never fabricate opening hours, prices, reviews, availability, travel time or reservation details.',
       'Hard anchors are scheduled before optional activities.',
@@ -33,7 +39,8 @@ export function plannerBrainCapabilities() {
       'Meals, work, sleep, recovery, accessibility and return margins are first-class planning constraints.',
       'Prefer geographic clusters and fewer meaningful stops over avoidable backtracking.',
       'Preserve free time when the user values spontaneity or recovery.',
-      'Every material automatic decision should be explainable and reversible.',
+      'Every material automatic suggestion should be explainable and reversible.',
+      'No system-generated itinerary change is applied until the user explicitly approves the proposed diff.',
       'Behavioral learning is lower-confidence than explicit user choices and must never silently override a hard preference.'
     ]
   };
@@ -48,7 +55,7 @@ export function buildPlanningBrief(input = {}) {
   const dayTypes = inferDayTypes(trip, anchors, input.workBlocks || []);
 
   return {
-    brainVersion: '1.0',
+    brainVersion: '1.1',
     status: questions.some((question) => question.required) ? 'NEEDS_INPUT' : 'READY_FOR_RESEARCH',
     trip,
     intent,
@@ -85,6 +92,12 @@ export function buildPlanningStrategy(input = {}) {
       backtrackingPenalty: 1.5,
       unknownFactPenalty: 0.35,
       lockedItemsNeverSilentlyMoved: true
+    },
+    approvalPolicy: {
+      requiresExplicitUserApprovalForItineraryMutation: true,
+      proposalFirst: true,
+      showDiffBeforeApproval: true,
+      automaticMutationAllowed: false
     },
     freeTimePolicy: freeTimePolicy(brief.intent),
     failurePolicy: 'If feasibility depends on a missing fact, flag it and request/resolve the fact instead of pretending the itinerary works.'
@@ -163,13 +176,19 @@ export function buildReplanDecision(input = {}) {
     actions.push('APPLY_USER_CHANGE', 'RECHECK_CONSTRAINTS', 'REOPTIMIZE_AFFECTED_DAY');
   }
 
+  const userApproved = input.userApproved === true;
   return {
     changeType,
     preserve: lockedItems,
     actions,
+    actionsAreProposals: true,
+    requiresUserApproval: true,
+    userApproved,
+    mayApply: userApproved,
+    executionMode: userApproved ? 'APPROVED_CHANGE' : 'PROPOSAL_ONLY',
     diffRequired: true,
     explanationRequired: true,
-    policy: 'Replan the smallest affected scope first; never silently rewrite the whole trip when a local repair is sufficient.'
+    policy: 'Prepare the smallest affected repair first, show the proposed diff, and do not apply any itinerary change until the user explicitly approves it.'
   };
 }
 
@@ -353,7 +372,7 @@ function phaseObjective(phase) {
     VERIFY_FEASIBILITY: 'Check opening windows, durations, transitions, reservations and margins.',
     STRESS_TEST: 'Test likely delays, weather and fatigue so the day is resilient.',
     EXPLAIN_PLAN: 'Tell the user why important choices were made and what alternatives exist.',
-    MONITOR_AND_REPLAN: 'Repair only the affected part of the itinerary when reality changes.'
+    MONITOR_AND_REPLAN: 'Prepare the smallest affected repair when reality changes, show the diff, and wait for explicit user approval before applying it.'
   };
   return objectives[phase];
 }
@@ -370,8 +389,8 @@ function phaseStopCondition(phase) {
     OPTIMIZE_ROUTE_AND_TIME: 'Transitions are computed or explicitly unknown.',
     VERIFY_FEASIBILITY: 'No known hard violation remains.',
     STRESS_TEST: 'Fragile transitions are identified and alternatives/buffers exist where needed.',
-    EXPLAIN_PLAN: 'Major automatic choices have concise rationales.',
-    MONITOR_AND_REPLAN: 'Triggers and locked items are known.'
+    EXPLAIN_PLAN: 'Major automatic suggestions have concise rationales.',
+    MONITOR_AND_REPLAN: 'Triggers, locked items, proposed diff and user approval state are known.'
   };
   return conditions[phase];
 }
