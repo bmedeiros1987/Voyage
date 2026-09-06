@@ -103,7 +103,7 @@ export function extractGenericTravelFacts(text = '', category = 'OTHER') {
     facts.flightNumber = flight[2];
   }
 
-  const route = compact.match(/\b([A-Z]{3})\b\s*(?:→|>|-|to|para|a)\s*\b([A-Z]{3})\b/);
+  const route = compact.match(/\b([A-Z]{3})\b\s*(?:→|->|>|-|to|para|a)\s*\b([A-Z]{3})\b/);
   if (route) facts.route = { origin: route[1], destination: route[2] };
 
   const currency = compact.match(/(?:R\$|US\$|USD|EUR|€|GBP|£)\s*([\d.,]+)/i);
