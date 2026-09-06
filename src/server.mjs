@@ -1,14 +1,17 @@
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { getRuntimeConfig, publicConfig } from './config.mjs';
 import { buildAvailabilitySummary } from './availability.mjs';
 import { ingestPdfBuffer } from './pdf-ingest.mjs';
 import { supportedImportCapabilities } from './import-taxonomy.mjs';
 import { buildGmailDiscoveryQuery, classifyGmailCandidate, gmailRealtimeContract, parseGmailPubSubEnvelope } from './gmail-travel.mjs';
+import { buildTripGraph, matchReservation, suggestTripForReservation } from './reservation-matcher.mjs';
 
 const config = getRuntimeConfig();
 const MAX_JSON_BYTES = 256 * 1024;
 const MAX_PDF_BYTES = 15 * 1024 * 1024;
+const STATIC_FILES = buildStaticMap();
 
 const server = http.createServer(async (req, res) => {
   const requestId = randomUUID();
@@ -34,6 +37,7 @@ const server = http.createServer(async (req, res) => {
         googleLogin: config.google.loginConfigured ? 'configured' : 'not_configured',
         gmail: config.google.gmailConfigured ? 'configured' : 'not_configured',
         universalImporter: 'enabled',
+        webShell: 'enabled',
         timestamp: new Date().toISOString()
       });
     }
@@ -117,6 +121,17 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === 'POST' && path === '/api/v1/trips/graph/preview') {
+      const body = await readJson(req, MAX_JSON_BYTES);
+      const reservations = Array.isArray(body.reservations) ? body.reservations.slice(0, 200) : [];
+      const incoming = body.incoming && typeof body.incoming === 'object' ? body.incoming : null;
+      return json(res, 200, {
+        graph: buildTripGraph(reservations),
+        reservationMatch: incoming ? matchReservation(reservations, incoming) : null,
+        tripSuggestion: incoming && Array.isArray(body.trips) ? suggestTripForReservation(body.trips.slice(0, 100), incoming) : null
+      });
+    }
+
     if (req.method === 'POST' && path === '/api/v1/availability/preview') {
       const body = await readJson(req, MAX_JSON_BYTES);
       return json(res, 200, buildAvailabilitySummary(body));
@@ -124,6 +139,10 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && path === '/api/v1/trips/demo') {
       return json(res, 200, demoTrips());
+    }
+
+    if (req.method === 'GET' && STATIC_FILES.has(path)) {
+      return serveStatic(res, STATIC_FILES.get(path));
     }
 
     return json(res, 404, { error: 'not_found', requestId });
@@ -154,6 +173,37 @@ const server = http.createServer(async (req, res) => {
 server.listen(config.port, '0.0.0.0', () => {
   console.log(JSON.stringify({ level: 'info', event: 'server_started', service: 'voyage-api', port: config.port, environment: config.nodeEnv }));
 });
+
+function buildStaticMap() {
+  const definitions = [
+    ['index.html', 'text/html; charset=utf-8'],
+    ['styles.css', 'text/css; charset=utf-8'],
+    ['themes.css', 'text/css; charset=utf-8'],
+    ['imports.css', 'text/css; charset=utf-8'],
+    ['app.js', 'text/javascript; charset=utf-8'],
+    ['service-worker.js', 'text/javascript; charset=utf-8'],
+    ['manifest.webmanifest', 'application/manifest+json; charset=utf-8']
+  ];
+  const map = new Map();
+  for (const [name, contentType] of definitions) {
+    const entry = { url: new URL(`../app/www/${name}`, import.meta.url), contentType, name };
+    map.set(`/${name}`, entry);
+    map.set(`/voyage/${name}`, entry);
+  }
+  map.set('/', map.get('/index.html'));
+  map.set('/voyage', map.get('/voyage/index.html'));
+  map.set('/voyage/', map.get('/voyage/index.html'));
+  return map;
+}
+
+async function serveStatic(res, entry) {
+  const data = await readFile(entry.url);
+  res.statusCode = 200;
+  res.setHeader('Content-Type', entry.contentType);
+  res.setHeader('Content-Length', data.length);
+  res.setHeader('Cache-Control', entry.name === 'service-worker.js' ? 'no-cache' : 'public, max-age=300');
+  res.end(data);
+}
 
 function setSecurityHeaders(res, requestId) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
