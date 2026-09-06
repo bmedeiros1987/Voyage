@@ -7,6 +7,8 @@ import { ingestPdfBuffer } from './pdf-ingest.mjs';
 import { supportedImportCapabilities } from './import-taxonomy.mjs';
 import { buildGmailDiscoveryQuery, classifyGmailCandidate, gmailRealtimeContract, parseGmailPubSubEnvelope } from './gmail-travel.mjs';
 import { buildTripGraph, matchReservation, suggestTripForReservation } from './reservation-matcher.mjs';
+import { buildAutomaticPlan, buildExportManifest, collaborationCapabilities, normalizeExternalItinerary, plannerCapabilities } from './trip-planner.mjs';
+import { buildDietaryTravelCard, buildGroupDietarySummary, dietaryCapabilities, evaluateFoodCandidate } from './dietary-profile.mjs';
 
 const config = getRuntimeConfig();
 const MAX_JSON_BYTES = 256 * 1024;
@@ -37,6 +39,8 @@ const server = http.createServer(async (req, res) => {
         googleLogin: config.google.loginConfigured ? 'configured' : 'not_configured',
         gmail: config.google.gmailConfigured ? 'configured' : 'not_configured',
         universalImporter: 'enabled',
+        automaticTripPlanner: 'enabled',
+        dietarySafety: 'enabled',
         webShell: 'enabled',
         timestamp: new Date().toISOString()
       });
@@ -137,6 +141,48 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && path === '/api/v1/availability/preview') {
       const body = await readJson(req, MAX_JSON_BYTES);
       return json(res, 200, buildAvailabilitySummary(body));
+    }
+
+    if (req.method === 'GET' && path === '/api/v1/planner/capabilities') {
+      return json(res, 200, plannerCapabilities());
+    }
+
+    if (req.method === 'POST' && path === '/api/v1/planner/preview') {
+      const body = await readJson(req, MAX_JSON_BYTES);
+      return json(res, 200, buildAutomaticPlan(body));
+    }
+
+    if (req.method === 'POST' && path === '/api/v1/planner/external-itinerary/preview') {
+      const body = await readJson(req, MAX_JSON_BYTES);
+      return json(res, 200, normalizeExternalItinerary(body));
+    }
+
+    if (req.method === 'GET' && path === '/api/v1/planner/collaboration/capabilities') {
+      return json(res, 200, collaborationCapabilities());
+    }
+
+    if (req.method === 'POST' && path === '/api/v1/planner/export/manifest') {
+      const body = await readJson(req, MAX_JSON_BYTES);
+      return json(res, 200, buildExportManifest(body));
+    }
+
+    if (req.method === 'GET' && path === '/api/v1/dietary/capabilities') {
+      return json(res, 200, dietaryCapabilities());
+    }
+
+    if (req.method === 'POST' && path === '/api/v1/dietary/venue-check') {
+      const body = await readJson(req, MAX_JSON_BYTES);
+      return json(res, 200, evaluateFoodCandidate(body.candidate || {}, body.profile || {}));
+    }
+
+    if (req.method === 'POST' && path === '/api/v1/dietary/group-summary') {
+      const body = await readJson(req, MAX_JSON_BYTES);
+      return json(res, 200, buildGroupDietarySummary(body.travellers || []));
+    }
+
+    if (req.method === 'POST' && path === '/api/v1/dietary/travel-card') {
+      const body = await readJson(req, MAX_JSON_BYTES);
+      return json(res, 200, buildDietaryTravelCard(body.profile || {}, body.locale || 'pt-BR'));
     }
 
     if (req.method === 'GET' && path === '/api/v1/trips/demo') {
