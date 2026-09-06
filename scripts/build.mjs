@@ -19,6 +19,7 @@ const required = [
   'app/www/themes.css',
   'app/www/imports.css',
   'app/www/app.js',
+  'app/www/import-enhancements.js',
   'app/www/service-worker.js',
   'app/www/manifest.webmanifest'
 ];
