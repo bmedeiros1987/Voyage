@@ -1,10 +1,16 @@
 import { timingSafeEqual } from 'node:crypto';
 import { buildCrewCheckBridgePreview, crewCheckIntegrationCapabilities } from './crewcheck-integration.mjs';
+import { handleIntelligenceHttp } from './intelligence-http.mjs';
 
 const MAX_BODY_BYTES = 256 * 1024;
 const FORBIDDEN_KEY = /(password|passcode|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|cpf|card[_-]?(number|cvv|cvc)|pnr|private[_-]?address)/i;
 
 export async function handleCrewCheckIntegrationHttp(req, res, path) {
+  // This handler is mounted by the main server before legacy routes. The intelligence
+  // router is delegated here so new Voyage capabilities can be added without
+  // repeatedly rewriting the monolithic server route table.
+  if (await handleIntelligenceHttp(req, res, path)) return true;
+
   if (req.method === 'GET' && path === '/api/v1/integrations/crewcheck/capabilities') {
     return sendJson(res, 200, {
       ok: true,
