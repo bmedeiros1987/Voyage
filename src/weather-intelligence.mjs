@@ -3,7 +3,7 @@ const WEATHER_STATUS = new Set(['SUITABLE', 'CAUTION', 'UNSUITABLE', 'BLOCKED', 
 
 export function weatherPlanningCapabilities() {
   return {
-    version: '1.0',
+    version: '1.1',
     sensitivities: [...WEATHER_SENSITIVITY],
     statuses: [...WEATHER_STATUS],
     principles: [
@@ -11,7 +11,8 @@ export function weatherPlanningCapabilities() {
       'Long-range climate or seasonal expectations are soft hints only; they must not be treated as a verified forecast.',
       'Near-trip and in-trip decisions should use fresh provider-backed forecast/nowcast data with provenance.',
       'Unknown weather never becomes an invented fact and should not silently cancel an activity.',
-      'Weather-sensitive optional activities may be moved or replaced, but locked reservations are preserved and surfaced for user review.',
+      'Weather-sensitive activities may be proposed for moving or replacement, but no itinerary change is applied before explicit user approval.',
+      'Locked reservations are always preserved unless the user explicitly approves a change.',
       'When weather makes an activity unsuitable, prefer a nearby equivalent or indoor alternative that still matches the user intent.'
     ],
     defaultThresholds: {
@@ -20,9 +21,15 @@ export function weatherPlanningCapabilities() {
       heatCold: { coldCautionFeelsLikeC: 8, heatCautionFeelsLikeC: 36 }
     },
     monitoring: {
-      preTrip: 'Re-evaluate weather-sensitive days when a trustworthy forecast enters range.',
-      duringTrip: 'Re-check the affected day and the next weather-sensitive activity when forecast/nowcast materially changes.',
-      replacementScope: 'Repair the smallest affected part of the itinerary first.'
+      preTrip: 'Re-evaluate weather-sensitive days when a trustworthy forecast enters range and prepare a proposed diff if needed.',
+      duringTrip: 'Re-check the affected day and next weather-sensitive activity when forecast/nowcast materially changes, then ask before changing the itinerary.',
+      replacementScope: 'Propose the smallest affected repair first.'
+    },
+    approvalPolicy: {
+      requiresExplicitUserApproval: true,
+      automaticMutationAllowed: false,
+      proposalFirst: true,
+      showDiffBeforeApproval: true
     }
   };
 }
@@ -37,7 +44,7 @@ export function normalizeWeatherContext(input = {}) {
     locationId: safeString(input.locationId, 220),
     updatedAt: safeDateTime(input.updatedAt),
     entries,
-    freshnessPolicy: input.freshnessPolicy || 'PROVIDER_TIMESTAMP_REQUIRED_FOR_AUTOMATIC_REPLAN',
+    freshnessPolicy: input.freshnessPolicy || 'PROVIDER_TIMESTAMP_REQUIRED_FOR_REPLAN_PROPOSAL',
     sourceRequired: true
   };
 }
@@ -114,6 +121,14 @@ export function buildWeatherReplacementPlan(input = {}) {
     .slice(0, 5);
 
   const needsReplacement = ['BLOCKED', 'UNSUITABLE'].includes(assessment.status);
+  const action = !needsReplacement
+    ? 'KEEP_ACTIVITY'
+    : activity.locked === true
+      ? 'PRESERVE_AND_ASK_USER'
+      : allowed.length
+        ? 'OFFER_ALTERNATIVES'
+        : 'SEARCH_ALTERNATIVES';
+
   return {
     needsReplacement,
     original: {
@@ -122,7 +137,7 @@ export function buildWeatherReplacementPlan(input = {}) {
       locked: activity.locked === true,
       assessment
     },
-    action: !needsReplacement ? 'KEEP_ACTIVITY' : activity.locked === true ? 'PRESERVE_AND_WARN_USER' : allowed.length ? 'OFFER_ALTERNATIVES' : 'SEARCH_ALTERNATIVES',
+    action,
     alternatives: allowed,
     searchIntent: needsReplacement && !allowed.length ? {
       weatherSafe: true,
@@ -131,7 +146,13 @@ export function buildWeatherReplacementPlan(input = {}) {
       preserveClusterId: sameCluster,
       categories: replacementCategories(activity)
     } : null,
-    policy: 'Never invent a replacement place. Offer only verified candidates or issue a provider-backed search intent.'
+    approval: {
+      required: needsReplacement,
+      automaticMutationAllowed: false,
+      currentItineraryRemainsActiveUntilApproved: true,
+      promptMode: needsReplacement ? 'ASK_BEFORE_APPLYING_CHANGE' : 'NO_CHANGE_NEEDED'
+    },
+    policy: 'Never invent a replacement place and never alter the itinerary automatically. Offer only verified candidates or a provider-backed search, show the proposed diff, and wait for explicit user approval before applying any move, removal or replacement.'
   };
 }
 
@@ -190,12 +211,15 @@ function findWeatherEntry(activity, entries) {
 }
 
 function result(status, sensitivity, entry, reasons) {
+  const replacementProposalRecommended = ['BLOCKED', 'UNSUITABLE'].includes(status);
   return {
     status: WEATHER_STATUS.has(status) ? status : 'UNKNOWN',
     sensitivity,
     reasons: uniqueStrings(reasons),
     weather: entry,
-    automaticReplacementAllowed: ['BLOCKED', 'UNSUITABLE'].includes(status),
+    replacementProposalRecommended,
+    automaticReplacementAllowed: false,
+    requiresExplicitUserApproval: replacementProposalRecommended,
     requiresFreshVerifiedWeather: true
   };
 }
