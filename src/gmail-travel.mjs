@@ -1,4 +1,5 @@
 import { classifyTravelDocument } from './import-taxonomy.mjs';
+import { extractGenericTravelFacts } from './pdf-ingest.mjs';
 
 const TRAVEL_TERMS = [
   'booking', 'reservation', 'reserva', 'itinerary', 'itinerario', 'itinerário', 'boarding pass', 'cartão de embarque',
@@ -29,18 +30,23 @@ export function classifyGmailCandidate(input = {}) {
   const subject = clean(input.subject);
   const from = clean(input.from);
   const snippet = clean(input.snippet);
+  const bodyPreview = clean(input.bodyPreview);
   const attachmentNames = Array.isArray(input.attachmentNames) ? input.attachmentNames.map(clean) : [];
-  const haystack = [subject, from, snippet, ...attachmentNames].join(' ');
+  const haystack = [subject, from, snippet, bodyPreview, ...attachmentNames].join(' ');
   const taxonomy = classifyTravelDocument(haystack, input.categoryHint || null);
   const matchedTerms = TRAVEL_TERMS.filter((term) => haystack.includes(clean(term))).slice(0, 10);
   const hasPdf = attachmentNames.some((name) => name.endsWith('.pdf'));
-  const providerSignal = /booking|expedia|airbnb|latam|gol|azul|united|delta|american|air france|klm|lufthansa|iberia|tap|ryanair|easyjet|flixbus|trenitalia|italo|renfe|eurostar|localiza|movida|hertz|avis|sixt|rentcars|ticketmaster|getyourguide|viator|civitatis/i.test(haystack);
+  const provider = detectProvider(haystack);
+  const providerSignal = Boolean(provider);
   const confidence = Math.min(1, taxonomy.confidence + (matchedTerms.length ? 0.12 : 0) + (hasPdf ? 0.08 : 0) + (providerSignal ? 0.08 : 0));
+  const facts = extractGenericTravelFacts([input.subject, input.snippet, input.bodyPreview].filter(Boolean).join(' '), taxonomy.category);
 
   return Object.freeze({
     candidate: confidence >= 0.5 || matchedTerms.length >= 2,
     confidence,
     category: taxonomy.category,
+    provider,
+    facts,
     evidence: [...new Set([...taxonomy.evidence, ...matchedTerms, ...(hasPdf ? ['pdf_attachment'] : []), ...(providerSignal ? ['known_travel_provider'] : [])])].slice(0, 12),
     attachmentPdfCount: attachmentNames.filter((name) => name.endsWith('.pdf')).length
   });
@@ -67,6 +73,18 @@ export function buildGmailDiscoveryQuery() {
     '-in:trash',
     '(has:attachment OR subject:(booking reservation reserva itinerary itinerário voo flight hotel ticket ingresso boarding check-in))'
   ].join(' ');
+}
+
+function detectProvider(value) {
+  const providers = [
+    ['Booking.com', /booking(?:\.com)?/i], ['Expedia', /expedia/i], ['Airbnb', /airbnb/i], ['LATAM', /latam/i],
+    ['GOL', /\bgol\b/i], ['Azul', /\bazul\b/i], ['United', /united/i], ['Delta', /delta/i], ['American Airlines', /american airlines|aa\.com/i],
+    ['Air France', /air france/i], ['KLM', /\bklm\b/i], ['Lufthansa', /lufthansa/i], ['Iberia', /iberia/i], ['TAP', /tap air|flytap|\btap\b/i],
+    ['Ryanair', /ryanair/i], ['easyJet', /easyjet/i], ['FlixBus', /flixbus/i], ['Trenitalia', /trenitalia/i], ['Italo', /italotreno|\bitalo\b/i],
+    ['Renfe', /renfe/i], ['Eurostar', /eurostar/i], ['Localiza', /localiza/i], ['Movida', /movida/i], ['Hertz', /hertz/i], ['Avis', /\bavis\b/i],
+    ['Sixt', /\bsixt\b/i], ['Rentcars', /rentcars/i], ['Ticketmaster', /ticketmaster/i], ['GetYourGuide', /getyourguide/i], ['Viator', /viator/i], ['Civitatis', /civitatis/i]
+  ];
+  return providers.find(([, pattern]) => pattern.test(value))?.[0] || null;
 }
 
 function clean(value) {
