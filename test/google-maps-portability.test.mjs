@@ -23,13 +23,21 @@ test('shared Google Maps link is accepted for provider resolution without scrapi
   assert.match(result.resolverPolicy, /never scrape/i);
 });
 
-test('real user-shared Google Maps short link is accepted as an import source', () => {
-  const sourceUrl = 'https://maps.app.goo.gl/i75PThBJWAMyKfMW9';
-  const result = normalizeGoogleMapsSharedUrl(sourceUrl);
-  assert.equal(result.status, 'NEEDS_PROVIDER_RESOLUTION');
-  assert.equal(result.sourceType, 'GOOGLE_MAPS_SHARED_ROUTE_URL');
-  assert.equal(result.sourceUrl, sourceUrl);
-  assert.deepEqual(result.items, []);
+test('real user-shared Google Maps short links are accepted as import sources', () => {
+  const sourceUrls = [
+    'https://maps.app.goo.gl/i75PThBJWAMyKfMW9',
+    'https://maps.app.goo.gl/Pe8mBz3MVH3tCTc8A',
+    'https://maps.app.goo.gl/9vo6xS3FwpQ3M6Y38',
+    'https://maps.app.goo.gl/8vkWpmbVxfaa7L1B9'
+  ];
+
+  for (const sourceUrl of sourceUrls) {
+    const result = normalizeGoogleMapsSharedUrl(sourceUrl);
+    assert.equal(result.status, 'NEEDS_PROVIDER_RESOLUTION');
+    assert.equal(result.sourceType, 'GOOGLE_MAPS_SHARED_ROUTE_URL');
+    assert.equal(result.sourceUrl, sourceUrl);
+    assert.deepEqual(result.items, []);
+  }
 });
 
 test('My Maps KML placemarks normalize into itinerary items', () => {
