@@ -1,5 +1,5 @@
-const CACHE = 'voyage-shell-v3';
-const CORE = ['./', './index.html', './styles.css', './themes.css', './imports.css', './app.js', './import-enhancements.js', './manifest.webmanifest'];
+const CACHE = 'voyage-shell-v4';
+const CORE = ['./', './index.html', './styles.css', './themes.css', './premium-layout.css', './premium-overrides.css', './imports.css', './app.js', './import-enhancements.js', './manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(CORE)));
