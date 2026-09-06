@@ -1,4 +1,5 @@
 @import url('./premium-layout.css');
+@import url('./premium-overrides.css');
 
 html[data-theme="light"] .welcome-screen {
   background: linear-gradient(180deg, #fbf7ef, #efe7db 56%, #f4f0e8);
