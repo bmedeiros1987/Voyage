@@ -1,4 +1,4 @@
-const SIGNATURE_VERSION = '1.0';
+const SIGNATURE_VERSION = '1.1';
 
 document.documentElement.dataset.voyageSignature = '1';
 injectSignatureHome();
@@ -86,16 +86,16 @@ function injectSignatureCommandCenter() {
         <div class="signature-system-tile" data-signature-system="core"><span><i></i>Core</span><strong>Verificando</strong></div>
         <div class="signature-system-tile" data-signature-system="intelligence"><span><i></i>Intelligence</span><strong>Verificando</strong></div>
         <div class="signature-system-tile" data-signature-system="crewcheck"><span><i></i>CrewCheck</span><strong>Verificando</strong></div>
-        <div class="signature-system-tile" data-signature-system="gmail"><span><i></i>Gmail Travel</span><strong>Verificando</strong></div>
+        <div class="signature-system-tile" data-signature-system="data"><span><i></i>Data Broker</span><strong>Verificando</strong></div>
       </div>
     </article>
 
     <section class="signature-section">
       <div class="signature-section__head"><div><small>ORQUESTRAÇÃO</small><h2>Recursos reaproveitados</h2></div></div>
       <div class="signature-capability-grid">
-        <button class="signature-capability" data-nav="live"><span>✈</span><span><strong>Voos, portões e bagagem</strong><small>Integração compartilhada com o ecossistema CrewCheck; Cirium e fontes operacionais entram por backend.</small></span><em data-capability-state="flight">Shared first</em></button>
-        <button class="signature-capability" data-nav="live"><span>↝</span><span><strong>Rotas e trânsito</strong><small>Reutiliza a camada de rotas disponível no ecossistema antes de contratar ou expor outro provedor.</small></span><em data-capability-state="routes">Shared first</em></button>
-        <button class="signature-capability" data-action="availability"><span>¤</span><span><strong>Câmbio e contexto local</strong><small>AwesomeAPI no backend para câmbio/CEP, com cache, proveniência e sem chave no cliente.</small></span><em data-capability-state="currency">Backend</em></button>
+        <button class="signature-capability" data-nav="live"><span>✈</span><span><strong>Voos, portões e bagagem</strong><small>Cirium é consumido pelo backend compartilhado do CrewCheck; o Voyage não duplica credenciais do provedor.</small></span><em data-capability-state="flight">Verificando</em></button>
+        <button class="signature-capability" data-nav="live"><span>↝</span><span><strong>Rotas e trânsito</strong><small>O Voyage prioriza a camada de rotas do ecossistema CrewCheck antes de adicionar outro provedor.</small></span><em data-capability-state="routes">Shared first</em></button>
+        <button class="signature-capability" data-action="availability"><span>¤</span><span><strong>Câmbio e contexto local</strong><small>AwesomeAPI no backend para câmbio/CEP, com cache, proveniência e sem chave no cliente.</small></span><em data-capability-state="currency">Verificando</em></button>
         <button class="signature-capability" data-action="imports"><span>⇧</span><span><strong>Universal Travel Importer</strong><small>PDF, Gmail e fontes externas viram fatos estruturados para o Planner Brain.</small></span><em data-capability-state="importer">Voyage</em></button>
         <button class="signature-capability" data-nav="command"><span>◇</span><span><strong>Journey Readiness</strong><small>Documentos, transporte, hospedagem, budget, bagagem, clima, offline e emergência.</small></span><em data-capability-state="readiness">Intelligence</em></button>
         <button class="signature-capability" data-nav="command"><span>⌖</span><span><strong>Aeroporto por dentro</strong><small>Roteamento interno in-app preparado para portão, imigração, esteira, alfândega, lounge e conexão.</small></span><em data-capability-state="indoor">In-app</em></button>
@@ -126,6 +126,7 @@ async function refreshSignatureStatus() {
     apiJson('/health'),
     apiJson('/api/v1/intelligence/capabilities'),
     apiJson('/api/v1/integrations/crewcheck/capabilities'),
+    apiJson('/api/v1/data/capabilities'),
     apiJson('/api/v1/integrations/gmail/status'),
     apiJson('/api/v1/imports/capabilities')
   ]);
@@ -133,16 +134,23 @@ async function refreshSignatureStatus() {
   const health = valueOf(responses[0]);
   const intelligence = valueOf(responses[1]);
   const crewcheck = valueOf(responses[2]);
-  const gmail = valueOf(responses[3]);
-  const importer = valueOf(responses[4]);
+  const dataBroker = valueOf(responses[3]);
+  const gmail = valueOf(responses[4]);
+  const importer = valueOf(responses[5]);
 
+  const sharedFlight = Boolean(dataBroker?.sharedFlightStatus?.ok && dataBroker?.sharedFlightStatus?.configured !== false);
+  const sharedData = Boolean(dataBroker?.sharedCrewCheckConfigured);
+  const currency = Boolean(dataBroker?.voyageNativeAwesomeApiConfigured || sharedData);
   const states = {
     core: Boolean(health?.status === 'ok'),
     intelligence: Boolean(intelligence?.version || intelligence?.postRoutes || intelligence?.modules),
-    crewcheck: Boolean(crewcheck?.configured || health?.crewCheckIntegration === 'configured'),
+    crewcheck: Boolean(crewcheck?.configured || health?.crewCheckIntegration === 'configured' || sharedData),
+    sharedFlight,
+    currency,
     gmail: Boolean(gmail?.enabled),
     importer: Boolean(importer),
-    offline: 'serviceWorker' in navigator
+    offline: 'serviceWorker' in navigator,
+    data: Boolean(dataBroker?.ok)
   };
 
   updateChip('platform', states.core, 'Voyage Core');
@@ -153,7 +161,7 @@ async function refreshSignatureStatus() {
   updateSystemTile('core', states.core, states.core ? 'Online' : 'Indisponível');
   updateSystemTile('intelligence', states.intelligence, states.intelligence ? 'Rotas carregadas' : 'Aguardando API');
   updateSystemTile('crewcheck', states.crewcheck, states.crewcheck ? 'Bridge configurado' : 'Pronto para vincular');
-  updateSystemTile('gmail', states.gmail, states.gmail ? (gmail?.pushSyncEnabled ? 'Tempo real' : 'Autorizado') : 'Opcional');
+  updateSystemTile('data', states.data, states.sharedFlight ? 'Cirium compartilhado' : states.data ? 'Broker ativo' : 'Aguardando backend');
 
   const weighted = [states.core, states.intelligence, states.importer, states.offline].filter(Boolean).length;
   const score = weighted * 25;
@@ -165,29 +173,39 @@ async function refreshSignatureStatus() {
 
   document.querySelectorAll('[data-capability-state]').forEach((element) => {
     const kind = element.dataset.capabilityState;
-    const ready = kind === 'importer' ? states.importer : kind === 'currency' ? states.core : kind === 'flight' || kind === 'routes' ? states.crewcheck : states.intelligence;
+    const ready = kind === 'importer'
+      ? states.importer
+      : kind === 'currency'
+        ? states.currency
+        : kind === 'flight'
+          ? states.sharedFlight
+          : kind === 'routes'
+            ? states.crewcheck
+            : states.intelligence;
     element.classList.toggle('is-ready', ready);
-    if (ready && ['flight','routes'].includes(kind)) element.textContent = 'Shared ready';
+    if (kind === 'flight') element.textContent = ready ? 'Cirium shared' : 'Shared first';
+    else if (kind === 'currency') element.textContent = ready ? 'FX ready' : 'Backend';
+    else if (ready && kind === 'routes') element.textContent = 'Shared first';
     else if (ready && kind === 'importer') element.textContent = 'Pronto';
     else if (ready && ['readiness','indoor'].includes(kind)) element.textContent = 'Ativo';
   });
 
-  renderStream({ health, intelligence, crewcheck, gmail, importer, states });
+  renderStream({ intelligence, crewcheck, dataBroker, gmail, importer, states });
 }
 
-function renderStream({ health, intelligence, crewcheck, gmail, importer, states }) {
+function renderStream({ intelligence, crewcheck, dataBroker, gmail, importer, states }) {
   const container = document.querySelector('[data-signature-stream]');
   if (!container) return;
   const stamp = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(new Date());
   const rows = [
     states.core && ['Core Voyage', 'API e shell respondendo normalmente.'],
     states.intelligence && ['Intelligence Suite', `${countRoutes(intelligence)} superfícies de decisão disponíveis sem mutação automática.`],
-    states.crewcheck && ['CrewCheck Shared Services', 'Bridge disponível para reaproveitar infraestrutura e evitar provedores duplicados.'],
+    states.sharedFlight && ['Cirium via CrewCheck', 'Status, portões, terminais e esteira disponíveis pelo serviço compartilhado, sem duplicar credenciais.'],
+    states.currency && ['Câmbio e CEP', dataBroker?.sharedCrewCheckConfigured ? 'Broker prioriza o serviço compartilhado do CrewCheck.' : 'AwesomeAPI nativa disponível no backend Voyage.'],
     states.importer && ['Universal Travel Importer', 'Capacidades de importação disponíveis para alimentar a jornada.'],
     states.gmail
       ? ['Gmail Travel', gmail?.pushSyncEnabled ? 'Sincronização em tempo real preparada.' : 'Autorização disponível; canal em tempo real depende da configuração.']
-      : ['Gmail Travel', 'Integração opcional; a importação manual continua independente.'],
-    ['Approval Gate', 'Nenhuma mudança de itinerário é aplicada sem aprovação explícita.']
+      : ['Approval Gate', 'Nenhuma mudança de itinerário é aplicada sem aprovação explícita.']
   ].filter(Boolean);
 
   container.innerHTML = rows.slice(0, 6).map(([title, detail], index) => `
