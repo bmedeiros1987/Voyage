@@ -13,8 +13,8 @@ button span,button strong,button small,button em,
 .topbar>*,.section-heading>*,.hero-card__content>*,.wallet-pass>*{min-width:0}
 
 .button{display:inline-flex;align-items:center;justify-content:center;gap:8px;line-height:1.2;text-align:center;white-space:normal;padding:12px 18px}
-.icon-button{flex:0 0 auto;min-width:42px;max-width:42px;padding:0;overflow:hidden}
-.text-button{max-width:100%;line-height:1.25;text-align:left;white-space:normal}
+.icon-button{flex:0 0 auto;min-width:44px;max-width:44px;min-height:44px;padding:0;overflow:hidden}
+.text-button{max-width:100%;min-height:44px;line-height:1.25;text-align:left;white-space:normal;display:inline-flex;align-items:center}
 
 .topbar{width:100%;min-width:0}
 .topbar>div:first-child{min-width:0;flex:1 1 auto}
@@ -22,7 +22,7 @@ button span,button strong,button small,button em,
 .topbar-actions{flex:0 0 auto;min-width:0}
 
 .segmented-control{width:100%;min-width:0;grid-auto-columns:minmax(0,1fr)}
-.segment{min-width:0;padding-inline:8px;line-height:1.2;white-space:normal}
+.segment{min-width:0;min-height:44px;padding-inline:8px;line-height:1.2;white-space:normal}
 
 .hero-card,.trip-cover,.welcome-visual,.premium-panel,.insight-card,.flight-card,.alert-card,
 .voyage-pulse,.quick-card,.inbox-card,.wallet-pass,.wallet-tile,.wallet-readiness,.planner-hero,.planner-control,.day-plan{max-width:100%}
@@ -30,7 +30,7 @@ button span,button strong,button small,button em,
 .hero-meta,.inbox-meta{flex-wrap:wrap}
 .avatar-stack{max-width:100%;overflow:hidden;padding-right:8px}
 
-.feature-row{grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:11px;min-width:0;text-align:left}
+.feature-row{grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:11px;min-width:0;min-height:68px;text-align:left}
 .feature-row>span:nth-child(2){min-width:0}
 .feature-row strong,.feature-row small{overflow-wrap:anywhere}
 .feature-row>span:last-child{flex:0 0 auto}
@@ -63,9 +63,14 @@ button span,button strong,button small,button em,
 
 .bottom-nav{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;max-width:calc(100vw - 24px)!important}
 .bottom-nav[hidden]{display:none!important}
-.nav-item{min-width:0!important;width:100%;padding-inline:4px!important;overflow:hidden}
+.nav-item{min-width:0!important;min-height:44px!important;width:100%;padding-inline:4px!important;overflow:hidden}
 .nav-item small{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px}
 .nav-icon{line-height:1}
+
+/* Keyboard and switch-access users must get a visible focus affordance without changing pointer styling. */
+:where(button,a,input,select,textarea,[tabindex]):focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+:where(button,a,input,select,textarea,[tabindex]):focus:not(:focus-visible){outline:none}
+@media (forced-colors:active){:where(button,a,input,select,textarea,[tabindex]):focus-visible{outline:3px solid CanvasText}}
 
 .import-screen,.import-stack,.import-panel,.import-dropzone,.import-list,.import-item{min-width:0;max-width:100%}
 .import-panel__head{display:grid;grid-template-columns:auto minmax(0,1fr);min-width:0;max-width:100%}
@@ -74,7 +79,7 @@ button span,button strong,button small,button em,
 .import-item{grid-template-columns:auto minmax(0,1fr) auto!important}
 .import-item strong,.import-item small{overflow-wrap:anywhere}
 .import-item__actions{min-width:0;max-width:100%;justify-items:end}
-.import-category{width:100%}
+.import-category{width:100%;min-height:44px}
 .import-dialog__card{width:min(92vw,560px);max-width:calc(100vw - 24px);max-height:min(88dvh,760px);overflow:auto}
 .import-field-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
 
@@ -138,7 +143,7 @@ button span,button strong,button small,button em,
 @media (max-width:330px){
   .nav-item small{display:none}
   .bottom-nav{min-height:58px}
-  .icon-button{width:38px;height:38px;min-width:38px;max-width:38px}
+  .icon-button{width:44px;height:44px;min-width:44px;max-width:44px}
   .topbar-actions{gap:5px}
 }
 
