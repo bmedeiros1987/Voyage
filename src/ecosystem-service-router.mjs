@@ -5,6 +5,7 @@ const CAPABILITIES = new Set([
   'TERMINAL',
   'BAGGAGE_CAROUSEL',
   'WEATHER',
+  'TRAVEL_HEALTH_RULES',
   'ROUTES',
   'LIVE_TRAFFIC',
   'PLACES',
@@ -24,7 +25,7 @@ const ISOLATION_LEVELS = new Set(['REQUEST_SCOPED', 'PRODUCT_SCOPED', 'TENANT_SC
 
 export function ecosystemServiceRouterCapabilities() {
   return {
-    version: '1.0',
+    version: '1.1',
     strategy: 'CREWCHECK_FIRST',
     supportedCapabilities: [...CAPABILITIES],
     principles: [
@@ -44,7 +45,7 @@ export function ecosystemServiceRouterCapabilities() {
 export function buildEcosystemServiceCatalog(input = {}) {
   const services = normalizeServices(input.services || []);
   return {
-    version: '1.0',
+    version: '1.1',
     services: services.map(sanitizeService),
     activeCount: services.filter((service) => service.status === 'ACTIVE').length,
     sharedCrewCheckCount: services.filter((service) => service.origin === 'CREWCHECK' && service.sharedWithVoyage).length,
@@ -62,7 +63,7 @@ export function resolveEcosystemCapabilities(input = {}) {
   const results = requested.map((capability) => resolveOne(capability, services, nowMs, maxAgeMinutes));
 
   return {
-    version: '1.0',
+    version: '1.1',
     strategy: 'CREWCHECK_FIRST',
     requested,
     resolved: results.filter((result) => result.status === 'RESOLVED'),
