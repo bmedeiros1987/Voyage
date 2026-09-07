@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { buildCrewCheckBridgePreview, crewCheckIntegrationCapabilities } from './crewcheck-integration.mjs';
 import { handleIntelligenceHttp } from './intelligence-http.mjs';
+import { handleTravelDataHttp } from './travel-data-http.mjs';
 
 const MAX_BODY_BYTES = 256 * 1024;
 const FORBIDDEN_KEY = /(password|passcode|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|cpf|card[_-]?(number|cvv|cvc)|pnr|private[_-]?address)/i;
@@ -13,10 +14,11 @@ const AUXILIARY_ASSETS = new Map([
 ]);
 
 export async function handleCrewCheckIntegrationHttp(req, res, path) {
-  // This handler is mounted by the main server before legacy routes. The intelligence
-  // router and lightweight premium assets are delegated here so new Voyage surfaces
-  // can evolve without repeatedly rewriting the monolithic server route table.
+  // This handler is mounted by the main server before legacy routes. Shared data,
+  // intelligence and lightweight premium assets are delegated here so Voyage can
+  // evolve without repeatedly rewriting the monolithic server route table.
   if (req.method === 'GET' && await serveAuxiliaryAsset(res, path)) return true;
+  if (await handleTravelDataHttp(req, res, path)) return true;
   if (await handleIntelligenceHttp(req, res, path)) return true;
 
   if (req.method === 'GET' && path === '/api/v1/integrations/crewcheck/capabilities') {
