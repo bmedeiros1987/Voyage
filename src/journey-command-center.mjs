@@ -6,12 +6,13 @@ import { buildAirportConnectionPlan } from './airport-connection-intelligence.mj
 import { buildBaggageConnectionDecision } from './baggage-intelligence.mjs';
 import { buildAirportIndoorRoute } from './airport-indoor-navigation.mjs';
 import { buildBudgetPlan } from './budget-intelligence.mjs';
+import { buildTravelHealthPlan } from './travel-health-intelligence.mjs';
 import { buildJourneyReadiness } from './journey-readiness.mjs';
 import { resolveEcosystemCapabilities } from './ecosystem-service-router.mjs';
 
 export function journeyCommandCenterCapabilities() {
   return {
-    version: '1.0',
+    version: '1.1',
     purpose: 'Compose Voyage intelligence into one operational trip state without silently mutating the itinerary.',
     layers: [
       'LODGING',
@@ -21,15 +22,17 @@ export function journeyCommandCenterCapabilities() {
       'AIRPORT_CONNECTION',
       'BAGGAGE',
       'AIRPORT_INDOOR_NAVIGATION',
+      'TRAVEL_HEALTH',
       'BUDGET',
       'JOURNEY_READINESS',
       'ECOSYSTEM_SERVICES'
     ],
     principles: [
       'The active itinerary remains unchanged until the user explicitly approves a proposed mutation.',
-      'Operational alerts such as leave-now, baggage pickup and gate or carousel guidance may be emitted automatically because they do not mutate the itinerary.',
+      'Operational alerts such as leave-now, baggage pickup, gate, carousel and destination entry-health guidance may be emitted automatically because they do not mutate the itinerary.',
       'CrewCheck shared services are preferred when eligible; personal user context stays product-scoped.',
-      'Unknown operational facts remain unresolved instead of being guessed.',
+      'Unknown operational or health-entry facts remain unresolved instead of being guessed.',
+      'Travel vaccine entry requirements are distinct from health recommendations; medical eligibility remains a clinician decision.',
       'Every material recommendation exposes the facts, gaps and approval state used to produce it.'
     ],
     mutationPolicy: {
@@ -89,6 +92,10 @@ export function buildJourneyCommandCenter(input = {}) {
     ? buildAirportIndoorRoute(input.indoorNavigation)
     : null;
 
+  const travelHealth = input.travelHealth
+    ? buildTravelHealthPlan(input.travelHealth)
+    : null;
+
   const budget = input.budget
     ? buildBudgetPlan(input.budget)
     : null;
@@ -99,7 +106,8 @@ export function buildJourneyCommandCenter(input = {}) {
     chronology,
     budget,
     baggage,
-    airportConnection
+    airportConnection,
+    travelHealth
   }));
 
   const alerts = buildOperationalAlerts({
@@ -107,6 +115,7 @@ export function buildJourneyCommandCenter(input = {}) {
     airportConnection,
     baggage,
     indoorNavigation,
+    travelHealth,
     budget,
     readiness
   });
@@ -114,7 +123,7 @@ export function buildJourneyCommandCenter(input = {}) {
   const proposal = buildMutationProposal(input.proposedChanges || input.proposal, input.userApproval);
 
   return {
-    version: '1.0',
+    version: '1.1',
     generatedAt: safeDateTime(input.now) || new Date().toISOString(),
     status: commandStatus(readiness, proposal),
     services,
@@ -125,6 +134,7 @@ export function buildJourneyCommandCenter(input = {}) {
     airportConnection,
     baggage,
     indoorNavigation,
+    travelHealth,
     budget,
     readiness,
     alerts,
@@ -138,7 +148,7 @@ export function buildJourneyCommandCenter(input = {}) {
   };
 }
 
-function buildReadinessInput({ input, lodging, chronology, budget, baggage, airportConnection }) {
+function buildReadinessInput({ input, lodging, chronology, budget, baggage, airportConnection, travelHealth }) {
   const uncoveredNights = lodging?.nights?.filter((night) => night.status === 'UNRESOLVED').length ?? undefined;
   const lodgingRequired = Array.isArray(lodging?.nights) ? lodging.nights.length > 0 : undefined;
   const chronologyContinuity = chronology?.completeness?.allLocationChangesRouted;
@@ -157,6 +167,7 @@ function buildReadinessInput({ input, lodging, chronology, budget, baggage, airp
 
   return {
     documents: input.readiness?.documents || input.documents || {},
+    ...(travelHealth ? { travelHealth: travelHealth.readiness } : input.readiness?.travelHealth !== undefined ? { travelHealth: input.readiness.travelHealth } : {}),
     transport: {
       ...(input.readiness?.transport || {}),
       continuityComplete: chronologyContinuity,
@@ -199,7 +210,7 @@ function buildReadinessInput({ input, lodging, chronology, budget, baggage, airp
   };
 }
 
-function buildOperationalAlerts({ departure, airportConnection, baggage, indoorNavigation, budget, readiness }) {
+function buildOperationalAlerts({ departure, airportConnection, baggage, indoorNavigation, travelHealth, budget, readiness }) {
   const alerts = [];
 
   if (departure?.status && !['WATCHING', 'NEEDS_DATA', 'ARRIVED'].includes(departure.status)) {
@@ -213,6 +224,10 @@ function buildOperationalAlerts({ departure, airportConnection, baggage, indoorN
 
   for (const alert of baggage?.alerts || []) {
     alerts.push({ ...alert, source: 'BAGGAGE', mutation: false });
+  }
+
+  for (const alert of travelHealth?.alerts || []) {
+    alerts.push({ ...alert, source: 'TRAVEL_HEALTH', mutation: false });
   }
 
   if (airportConnection?.status === 'IMPOSSIBLE' || ['HIGH', 'IMPOSSIBLE'].includes(airportConnection?.connectionRisk)) {
@@ -263,6 +278,7 @@ function defaultRequestedCapabilities(input) {
     ['ROUTES', 'LIVE_TRAFFIC', 'TRANSIT'].forEach((item) => requested.add(item));
   }
   if (input.budget) requested.add('CURRENCY');
+  if (input.travelHealth) requested.add('TRAVEL_HEALTH_RULES');
   return [...requested];
 }
 
@@ -276,7 +292,7 @@ function commandStatus(readiness, proposal) {
 function dedupeAlerts(alerts) {
   const seen = new Set();
   return alerts.filter((alert) => {
-    const key = `${alert.type}:${alert.source || ''}:${alert.carousel || ''}`;
+    const key = `${alert.type}:${alert.source || ''}:${alert.carousel || ''}:${alert.vaccine || ''}:${alert.countryCode || ''}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
