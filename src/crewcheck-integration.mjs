@@ -3,18 +3,41 @@ const FREE_DAY_TYPES = new Set(['OFF', 'FOLGA', 'FREE_DAY']);
 
 export function crewCheckIntegrationCapabilities() {
   return {
-    version: '1.0',
+    version: '1.1',
     surfaceName: 'Voyage integrado',
-    legacyConceptReplaced: 'CREWCHECK_EXPLORER',
+    embeddedConcept: 'CREWCHECK_EXPLORER',
+    embeddedBrand: 'VOYAGE',
+    standaloneProductSeparate: true,
     integrationMode: 'DIRECT_PRODUCT_BRIDGE',
     principles: [
-      'Voyage replaces the CrewCheck Explorer concept instead of creating a third overlapping travel surface.',
-      'CrewCheck remains the source of truth for roster and crew operational facts; Voyage remains the source of truth for personal trip planning.',
+      'Inside CrewCheck, Voyage preserves the CrewCheck Explorer concept under the Voyage brand: contextual discovery around real crew availability.',
+      'The embedded Voyage surface must not replicate or compete with native CrewCheck operational functions.',
+      'CrewCheck remains the source of truth for roster, Smart Departure, radar, operational weather, regulation, duty lodging, alarms and crew finance.',
+      'The standalone Voyage app remains a separate Travel Operating System and is the source of truth for personal-trip planning.',
+      'When an embedded need is operational, Voyage should hand off or deep-link to the native CrewCheck capability instead of creating a parallel implementation.',
       'Only user-approved, minimized CrewCheck context is transferred into Voyage.',
       'Raw passwords, provider tokens, CPF, payment credentials, PNRs, private-home addresses and unrelated personal data are never part of the bridge contract.',
       'Crew work duties become planning constraints, not personal-trip itinerary items.',
       'A CrewCheck flight may inform crew availability and positioning, but it is never silently added to a personal Voyage itinerary.',
       'All Voyage itinerary mutations still require explicit user approval.'
+    ],
+    embeddedScope: [
+      'FREE_TIME_DISCOVERY',
+      'NEARBY_FOOD_AND_COFFEE',
+      'LEISURE_AND_EXPERIENCES',
+      'OVERNIGHT_SURROUNDINGS',
+      'CONTEXTUAL_OPPORTUNITIES'
+    ],
+    crewCheckNativeScope: [
+      'ROSTER',
+      'SMART_DEPARTURE',
+      'FLIGHT_RADAR',
+      'OPERATIONAL_WEATHER',
+      'REGULATION',
+      'DUTY_LODGING',
+      'WAKEUP',
+      'PER_DIEM',
+      'SALARY'
     ],
     sharedContext: [
       'CREW_MEMBER_ROLE',
@@ -76,37 +99,40 @@ export function buildCrewCheckVoyageContext(input = {}) {
       crewFlightsBecomePersonalTripItemsAutomatically: false,
       flightRecommendationsEligibleForCrewWhenRelevant: true,
       protectRequiredRestAndUnknownDays: true,
+      embeddedVoyageCompetesWithCrewCheckOperationalFunctions: false,
       userApprovalRequiredForVoyageChanges: true
     }
   };
 
   return {
-    version: '1.0',
+    version: '1.1',
     status: roster.period || roster.workAnchors.length || availability.explicitFreeDates.length ? 'READY' : 'READY_WITH_LIMITED_CONTEXT',
     source: 'CREWCHECK',
     product: 'VOYAGE',
+    embeddedMode: 'EXPLORER',
     profile: publicProfile(profile),
     roster,
     availability,
     planningContext,
     approval: approvalState(true),
-    message: 'Voyage integrado ao CrewCheck. Sua escala é usada como restrição de disponibilidade; o roteiro pessoal continua sob seu controle.'
+    message: 'Voyage em modo Explorer integrado ao CrewCheck. Sua escala protege o tempo operacional; descoberta e lazer usam apenas as janelas realmente disponíveis.'
   };
 }
 
 export function buildCrewCheckBridgePreview(input = {}) {
   const context = buildCrewCheckVoyageContext(input);
   return {
-    version: '1.0',
+    version: '1.1',
     surface: 'VOYAGE_INTEGRATED',
     legacySurface: 'CREWCHECK_EXPLORER',
+    embeddedMode: 'EXPLORER',
     context,
     entry: {
       title: 'Voyage',
-      subtitle: 'Beyond the trip.',
+      subtitle: 'Explorer do tripulante · Beyond the trip.',
       badge: 'Integrado ao CrewCheck',
-      primaryAction: context.status === 'AWAITING_USER_APPROVAL' ? 'AUTHORIZE_CREWCHECK_CONTEXT' : 'CONTINUE_IN_VOYAGE',
-      secondaryAction: 'CONTINUE_WITHOUT_CREWCHECK_CONTEXT'
+      primaryAction: context.status === 'AWAITING_USER_APPROVAL' ? 'AUTHORIZE_CREWCHECK_CONTEXT' : 'CONTINUE_IN_VOYAGE_EXPLORER',
+      secondaryAction: 'OPEN_STANDALONE_VOYAGE'
     },
     mutationPolicy: {
       currentItineraryRemainsActive: true,
