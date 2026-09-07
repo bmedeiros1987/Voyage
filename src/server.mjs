@@ -16,6 +16,20 @@ import { createRuntimePersistence } from './persistence.mjs';
 import { createGmailPubSubVerifier } from './gmail-pubsub-auth.mjs';
 
 const config = getRuntimeConfig();
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'none'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "img-src 'self' data:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "manifest-src 'self'",
+  "worker-src 'self'"
+].join('; ');
 const MAX_JSON_BYTES = 256 * 1024;
 const MAX_PDF_BYTES = 15 * 1024 * 1024;
 const STATIC_FILES = buildStaticMap();
@@ -330,12 +344,17 @@ async function serveStatic(res, entry) {
 }
 
 function setSecurityHeaders(res, requestId) {
+  res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Request-Id', requestId);
+  if (config.nodeEnv === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+  }
+  res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Origin', corsOrigin());
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Voyage-Filename, X-Voyage-Category, X-Voyage-Provider, X-CrewCheck-Service-Token');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
