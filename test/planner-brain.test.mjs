@@ -15,6 +15,7 @@ test('planner brain uses a full travel planning method instead of attraction lis
   assert.ok(capabilities.phases.includes('PLACE_MEALS_WORK_REST'));
   assert.ok(capabilities.phases.includes('MONITOR_AND_REPLAN'));
   assert.equal(capabilities.approvalPolicy.requiresExplicitUserApprovalForItineraryMutation, true);
+  assert.equal(capabilities.approvalPolicy.approvalMustBeSeparateFromProposalCreation, true);
   assert.equal(capabilities.approvalPolicy.automaticMutationAllowed, false);
 });
 
@@ -40,6 +41,7 @@ test('strategy protects free time for relaxed users and prioritizes feasibility'
   assert.equal(strategy.freeTimePolicy.recommendedDailyMinutes, 150);
   assert.equal(strategy.priorities[0].dimension, 'HARD_CONSTRAINT_COMPLIANCE');
   assert.equal(strategy.approvalPolicy.proposalFirst, true);
+  assert.equal(strategy.approvalPolicy.separateApprovalRequired, true);
 });
 
 test('plan quality fails when hard constraints or impossible transitions exist', () => {
@@ -65,15 +67,16 @@ test('replanning proposes the smallest repair and waits for explicit approval', 
   assert.equal(decision.userApproved, false);
   assert.equal(decision.mayApply, false);
   assert.equal(decision.executionMode, 'PROPOSAL_ONLY');
-  assert.match(decision.policy, /explicitly approves/i);
+  assert.match(decision.policy, /separate authenticated approval/i);
 });
 
-test('an approved replan is marked eligible to apply only after explicit approval', () => {
-  const decision = buildReplanDecision({ changeType: 'WEATHER', userApproved: true });
+test('same-request userApproved cannot self-approve a replan proposal', () => {
+  const decision = buildReplanDecision({ changeType: 'WEATHER', userApproved: true, proposalId: 'not-issued' });
   assert.equal(decision.requiresUserApproval, true);
-  assert.equal(decision.userApproved, true);
-  assert.equal(decision.mayApply, true);
-  assert.equal(decision.executionMode, 'APPROVED_CHANGE');
+  assert.equal(decision.userApproved, false);
+  assert.equal(decision.mayApply, false);
+  assert.equal(decision.executionMode, 'PROPOSAL_ONLY');
+  assert.equal(decision.approvalContract, 'SEPARATE_AUTHENTICATED_PROPOSAL_APPROVAL');
 });
 
 test('explicit preference learning outranks inferred behavior and remains reversible', () => {
