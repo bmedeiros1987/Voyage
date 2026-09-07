@@ -4,6 +4,7 @@ import { chronologicalItineraryCapabilities, buildChronologicalItinerary } from 
 import { transportIntelligenceCapabilities, buildTransportChoice } from './transport-intelligence.mjs';
 import { departureIntelligenceCapabilities, buildDepartureDecision } from './departure-intelligence.mjs';
 import { weatherPlanningCapabilities, evaluateActivityWeather, buildWeatherReplacementPlan } from './weather-intelligence.mjs';
+import { travelHealthIntelligenceCapabilities, buildTravelHealthPlan } from './travel-health-intelligence.mjs';
 import { airportConnectionCapabilities, buildAirportConnectionPlan, knownAirportConnectionFacts } from './airport-connection-intelligence.mjs';
 import { baggageIntelligenceCapabilities, buildBaggageConnectionDecision } from './baggage-intelligence.mjs';
 import { baggagePassportCapabilities, analyzeBaggagePassport } from './baggage-passport-intelligence.mjs';
@@ -22,6 +23,7 @@ const GET_ROUTES = new Map([
   ['/api/v1/transport/capabilities', transportIntelligenceCapabilities],
   ['/api/v1/departure/capabilities', departureIntelligenceCapabilities],
   ['/api/v1/weather/capabilities', weatherPlanningCapabilities],
+  ['/api/v1/travel-health/capabilities', travelHealthIntelligenceCapabilities],
   ['/api/v1/airport-connections/capabilities', airportConnectionCapabilities],
   ['/api/v1/baggage/capabilities', baggageIntelligenceCapabilities],
   ['/api/v1/baggage/passport/capabilities', baggagePassportCapabilities],
@@ -40,6 +42,7 @@ const POST_ROUTES = new Map([
   ['/api/v1/planner/chronological/preview', buildChronologicalItinerary],
   ['/api/v1/transport/choice', buildTransportChoice],
   ['/api/v1/departure/decision', buildDepartureDecision],
+  ['/api/v1/travel-health/plan', buildTravelHealthPlan],
   ['/api/v1/airport-connections/plan', buildAirportConnectionPlan],
   ['/api/v1/baggage/connection', buildBaggageConnectionDecision],
   ['/api/v1/baggage/passport/analyze', analyzeBaggagePassport],
@@ -53,7 +56,7 @@ const POST_ROUTES = new Map([
 
 export function intelligenceHttpCapabilities() {
   return {
-    version: '1.2',
+    version: '1.3',
     getRoutes: [...GET_ROUTES.keys()],
     postRoutes: [...POST_ROUTES.keys(), '/api/v1/weather/activity-check', '/api/v1/weather/replacement-plan'],
     policy: {
