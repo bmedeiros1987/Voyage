@@ -15,9 +15,6 @@ const THEME_LABELS = { auto: 'Automático', dark: 'Escuro', light: 'Claro' };
 const nav = document.querySelector('[data-bottom-nav]');
 const screens = [...document.querySelectorAll('[data-screen]')];
 const themeLabels = [...document.querySelectorAll('[data-theme-label]')];
-const importFileInput = document.querySelector('[data-import-files]');
-const importCategory = document.querySelector('[data-import-category]');
-const importList = document.querySelector('[data-import-list]');
 
 let currentScreen = 'welcome';
 let previousScreen = 'journeys';
@@ -55,19 +52,13 @@ function showScreen(name, remember = true) {
   });
 
   if (name === 'imports') {
-    renderImportQueue();
+    document.dispatchEvent(new CustomEvent('voyage:imports-open'));
     refreshGmailStatus();
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 document.addEventListener('click', (event) => {
-  const deleteEl = event.target.closest('[data-delete-import]');
-  if (deleteEl) {
-    removeLocalImport(deleteEl.dataset.deleteImport).then(renderImportQueue);
-    return;
-  }
-
   const actionEl = event.target.closest('[data-action]');
   const navEl = event.target.closest('[data-nav]');
 
@@ -81,11 +72,34 @@ document.addEventListener('click', (event) => {
     if (dayButton) {
       dayButton.parentElement.querySelectorAll('button').forEach((button) => button.classList.remove('selected'));
       dayButton.classList.add('selected');
+      return;
     }
+
     const preference = event.target.closest('.preference');
     if (preference) {
       preference.parentElement.querySelectorAll('.preference').forEach((button) => button.classList.remove('preference--active'));
       preference.classList.add('preference--active');
+      return;
+    }
+
+    const segment = event.target.closest('.segment');
+    if (segment) {
+      segment.parentElement?.querySelectorAll('.segment').forEach((button) => button.classList.toggle('segment--active', button === segment));
+      return;
+    }
+
+    const tab = event.target.closest('.tab');
+    if (tab) {
+      tab.parentElement?.querySelectorAll('.tab').forEach((button) => button.classList.toggle('tab--active', button === tab));
+      return;
+    }
+
+    const passiveButton = event.target.closest('button');
+    if (passiveButton && !passiveButton.disabled) {
+      const safety = passiveButton.matches('.sos-button');
+      showShellNotice(safety
+        ? 'Assistência ainda não está configurada neste ambiente. O Voyage não simula uma chamada de emergência.'
+        : 'Este recurso ainda está sendo conectado à experiência Voyage.');
     }
     return;
   }
@@ -109,26 +123,16 @@ document.addEventListener('click', (event) => {
       showScreen('imports');
       break;
     case 'gmail-connect':
-      showImportToast('A conexão Gmail será habilitada automaticamente quando o OAuth estiver configurado no servidor.');
+      showShellNotice('A conexão Gmail será habilitada quando o OAuth estiver configurado no servidor.');
       refreshGmailStatus();
       break;
     case 'back':
       showScreen(previousScreen || 'journeys', false);
       break;
+    default:
+      showShellNotice('Este recurso ainda está sendo conectado à experiência Voyage.');
   }
 });
-
-importFileInput?.addEventListener('change', async () => {
-  const files = [...(importFileInput.files || [])];
-  if (!files.length) return;
-  const hint = importCategory?.value || '';
-  for (const file of files) await queuePdfImport(file, hint);
-  importFileInput.value = '';
-  await renderImportQueue();
-  showImportToast(`${files.length} arquivo${files.length > 1 ? 's' : ''} adicionado${files.length > 1 ? 's' : ''} ao Voyage.`);
-});
-
-window.addEventListener('online', () => syncQueuedImports().then(renderImportQueue).catch(() => {}));
 
 applyTheme(getStoredTheme());
 showScreen('welcome', false);
@@ -189,77 +193,15 @@ function injectImportCenter() {
         <div class="import-list" data-import-list><div class="import-empty">Nenhum documento importado neste dispositivo.</div></div>
       </article>
     </div>
-    <div class="import-toast" data-import-toast></div>`;
+    <div class="import-toast" data-import-toast role="status" aria-live="polite"></div>`;
   document.querySelector('.app-shell')?.insertBefore(screen, document.querySelector('[data-bottom-nav]'));
-}
-
-async function queuePdfImport(file, categoryHint) {
-  if (file.type && file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-    showImportToast(`${file.name}: formato ainda não suportado.`);
-    return;
-  }
-  if (file.size > 15 * 1024 * 1024) {
-    showImportToast(`${file.name}: PDF maior que 15 MB.`);
-    return;
-  }
-  const sha256 = await sha256File(file);
-  const record = {
-    id: crypto.randomUUID ? crypto.randomUUID() : `import-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    sha256,
-    name: file.name,
-    type: 'application/pdf',
-    size: file.size,
-    categoryHint: categoryHint || null,
-    status: 'LOCAL_QUEUED',
-    createdAt: new Date().toISOString(),
-    blob: file
-  };
-  await putImport(record);
-  await tryBackendUpload(record).catch(() => {});
-}
-
-async function tryBackendUpload(record) {
-  if (!navigator.onLine || !record?.blob) return false;
-  const headers = { 'Content-Type': 'application/pdf', 'X-Voyage-Filename': record.name };
-  if (record.categoryHint) headers['X-Voyage-Category'] = record.categoryHint;
-  const response = await fetchApi('/api/v1/imports/pdf', { method: 'POST', headers, body: record.blob });
-  if (!response.ok) throw new Error(`upload_${response.status}`);
-  const parsed = await response.json();
-  record.status = parsed.status || 'PARSED';
-  record.category = parsed.document?.category || record.categoryHint || 'OTHER';
-  record.backendImportId = parsed.importId || null;
-  record.reviewReasons = parsed.review?.reasons || [];
-  record.syncedAt = new Date().toISOString();
-  await putImport(record);
-  return true;
-}
-
-async function syncQueuedImports() {
-  const records = await listImports();
-  for (const record of records.filter((item) => item.status === 'LOCAL_QUEUED')) {
-    await tryBackendUpload(record).catch(() => {});
-  }
-}
-
-async function renderImportQueue() {
-  if (!importList) return;
-  const records = (await listImports()).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-  if (!records.length) {
-    importList.innerHTML = '<div class="import-empty">Nenhum documento importado neste dispositivo.</div>';
-    return;
-  }
-  importList.innerHTML = records.slice(0, 40).map((record) => {
-    const statusClass = record.status === 'PARSED' ? 'import-status--ok' : record.status === 'NEEDS_REVIEW' ? 'import-status--review' : '';
-    const statusLabel = record.status === 'PARSED' ? 'Importado' : record.status === 'NEEDS_REVIEW' ? 'Revisar' : 'Na fila';
-    const category = categoryLabel(record.category || record.categoryHint || 'OTHER');
-    return `<div class="import-item"><div class="import-item__icon">PDF</div><div><strong>${escapeHtml(record.name)}</strong><small>${category} · ${formatBytes(record.size)} · ${new Date(record.createdAt).toLocaleDateString('pt-BR')}</small></div><div style="display:grid;gap:6px;justify-items:end"><span class="import-status ${statusClass}">${statusLabel}</span><button class="text-button" data-delete-import="${record.id}" aria-label="Remover ${escapeHtml(record.name)}">Remover</button></div></div>`;
-  }).join('');
 }
 
 async function refreshGmailStatus() {
   const title = document.querySelector('[data-gmail-title]');
   const detail = document.querySelector('[data-gmail-detail]');
   const dot = document.querySelector('[data-gmail-dot]');
+  if (!title || !detail || !dot) return;
   try {
     const response = await fetchApi('/api/v1/integrations/gmail/status', { headers: { Accept: 'application/json' } });
     if (!response.ok) throw new Error('gmail_status_unavailable');
@@ -285,76 +227,18 @@ function fetchApi(path, options = {}) {
   return fetch(`${base}${path}`, options);
 }
 
-function sha256File(file) {
-  return file.arrayBuffer().then((buffer) => crypto.subtle.digest('SHA-256', buffer)).then((digest) => [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join(''));
-}
-
-function openImportDb() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open('voyage-local', 1);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains('imports')) db.createObjectStore('imports', { keyPath: 'id' }).createIndex('sha256', 'sha256', { unique: false });
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function putImport(record) {
-  const db = await openImportDb();
-  await new Promise((resolve, reject) => {
-    const tx = db.transaction('imports', 'readwrite');
-    tx.objectStore('imports').put(record);
-    tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error);
-  });
-  db.close();
-}
-
-async function listImports() {
-  const db = await openImportDb();
-  const records = await new Promise((resolve, reject) => {
-    const request = db.transaction('imports', 'readonly').objectStore('imports').getAll();
-    request.onsuccess = () => resolve(request.result || []);
-    request.onerror = () => reject(request.error);
-  });
-  db.close();
-  return records;
-}
-
-async function removeLocalImport(id) {
-  const db = await openImportDb();
-  await new Promise((resolve, reject) => {
-    const tx = db.transaction('imports', 'readwrite');
-    tx.objectStore('imports').delete(id);
-    tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error);
-  });
-  db.close();
-}
-
-function categoryLabel(value) {
-  const labels = { BOARDING_PASS:'Cartão de embarque', AIR_TRAVEL:'Passagem aérea', LODGING:'Hospedagem', CAR_RENTAL:'Carro alugado', RAIL:'Trem', BUS:'Ônibus', FERRY:'Ferry', TRANSFER:'Transfer', EVENT_TICKET:'Show / evento', ATTRACTION_TICKET:'Museu / atração', TOUR:'Passeio / tour', RESTAURANT:'Restaurante', TRAVEL_INSURANCE:'Seguro viagem', LOUNGE:'Sala VIP', PARKING:'Estacionamento', VISA_OR_ENTRY:'Visto / autorização', CRUISE:'Cruzeiro', BAGGAGE:'Bagagem', OTHER:'Outro' };
-  return labels[value] || 'Outro';
-}
-
-function formatBytes(value) {
-  const bytes = Number(value) || 0;
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function escapeHtml(value) {
-  return String(value || '').replace(/[&<>'"]/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));
-}
-
-function showImportToast(message) {
-  const toast = document.querySelector('[data-import-toast]');
-  if (!toast) return;
+function showShellNotice(message) {
+  let toast = document.querySelector('[data-shell-toast]');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.className = 'import-toast';
+    toast.dataset.shellToast = '';
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
+    document.body.appendChild(toast);
+  }
   toast.textContent = message;
   toast.classList.add('import-toast--show');
-  clearTimeout(showImportToast.timer);
-  showImportToast.timer = setTimeout(() => toast.classList.remove('import-toast--show'), 3200);
+  clearTimeout(showShellNotice.timer);
+  showShellNotice.timer = setTimeout(() => toast.classList.remove('import-toast--show'), 3400);
 }
