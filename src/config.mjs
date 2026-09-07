@@ -35,7 +35,11 @@ export function getRuntimeConfig(env = process.env) {
         isConfigured(env.GOOGLE_REDIRECT_URI) &&
         isConfigured(env.TOKEN_ENCRYPTION_KEY),
       pubsubConfigured:
-        isConfigured(env.GOOGLE_PUBSUB_TOPIC) && isConfigured(env.GOOGLE_PUBSUB_AUDIENCE)
+        isConfigured(env.GOOGLE_PUBSUB_TOPIC) && isConfigured(env.GOOGLE_PUBSUB_AUDIENCE),
+      pubsubAudience: isConfigured(env.GOOGLE_PUBSUB_AUDIENCE) ? env.GOOGLE_PUBSUB_AUDIENCE.trim() : null,
+      pubsubServiceAccountEmail: isConfigured(env.GOOGLE_PUBSUB_SERVICE_ACCOUNT_EMAIL)
+        ? env.GOOGLE_PUBSUB_SERVICE_ACCOUNT_EMAIL.trim().toLowerCase()
+        : null
     }),
     sharedCrewCheck: Object.freeze({
       configured:

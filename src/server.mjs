@@ -13,6 +13,7 @@ import { assessPlanQuality, buildPlanningBrief, buildPlanningStrategy, buildPref
 import { handleCrewCheckIntegrationHttp } from './crewcheck-http-integration.mjs';
 import { handlePlannerProposalHttp } from './planner-proposal-http.mjs';
 import { createRuntimePersistence } from './persistence.mjs';
+import { createGmailPubSubVerifier } from './gmail-pubsub-auth.mjs';
 
 const config = getRuntimeConfig();
 const MAX_JSON_BYTES = 256 * 1024;
@@ -20,6 +21,10 @@ const MAX_PDF_BYTES = 15 * 1024 * 1024;
 const STATIC_FILES = buildStaticMap();
 const PROPOSAL_PATH_PREFIX = '/api/v1/planner/itinerary/proposals';
 const runtimePersistence = initializeRuntimePersistence();
+const gmailPubSubVerifier = createGmailPubSubVerifier({
+  audience: config.google.pubsubConfigured ? config.google.pubsubAudience : null,
+  serviceAccountEmail: config.google.pubsubServiceAccountEmail
+});
 
 const server = http.createServer(async (req, res) => {
   const requestId = randomUUID();
@@ -136,12 +141,18 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && path === '/api/v1/integrations/gmail/pubsub') {
+      const push = await gmailPubSubVerifier.verifyRequest(req);
       const body = await readJson(req, MAX_JSON_BYTES);
       const notification = parseGmailPubSubEnvelope(body);
+      if (!gmailPubSubVerifier.registerDelivery(notification.messageId)) {
+        return json(res, 202, { accepted: true, duplicate: true, notification, action: 'IGNORED_REPLAYED_DELIVERY' });
+      }
       return json(res, 202, {
         accepted: true,
+        duplicate: false,
+        verifiedPushSubject: push.email || push.subject,
         notification,
-        action: config.google.gmailConfigured && config.google.pubsubConfigured ? 'PROCESS_GMAIL_HISTORY' : 'DEFER_UNTIL_GMAIL_CONFIGURED'
+        action: config.google.gmailConfigured ? 'PROCESS_GMAIL_HISTORY' : 'DEFER_UNTIL_GMAIL_CONFIGURED'
       });
     }
 
@@ -387,7 +398,11 @@ function publicErrorCode(error) {
     'crewcheck_bridge_body_too_large', 'crewcheck_bridge_invalid_json',
     'authentication_not_configured', 'authentication_required', 'authentication_invalid', 'session_expired',
     'session_not_found', 'session_revoked', 'proposal_id_invalid', 'production_persistence_required',
-    'tidb_execute_required'
+    'tidb_execute_required', 'gmail_pubsub_not_configured', 'pubsub_authentication_required', 'pubsub_token_invalid',
+    'pubsub_token_algorithm_unsupported', 'pubsub_token_kid_missing', 'pubsub_token_issuer_invalid',
+    'pubsub_token_audience_invalid', 'pubsub_token_expired', 'pubsub_token_not_yet_valid',
+    'pubsub_token_subject_invalid', 'pubsub_token_key_unknown', 'pubsub_token_signature_invalid',
+    'pubsub_jwks_unavailable'
   ]);
   return known.has(error?.message) ? error.message : 'internal_error';
 }
