@@ -6,10 +6,14 @@ import {
   buildCrewCheckBridgePreview
 } from '../src/crewcheck-integration.mjs';
 
-test('CrewCheck Explorer concept is replaced by Voyage integrated surface', () => {
+test('CrewCheck Explorer concept is preserved under Voyage branding without competing with CrewCheck', () => {
   const capabilities = crewCheckIntegrationCapabilities();
   assert.equal(capabilities.surfaceName, 'Voyage integrado');
-  assert.equal(capabilities.legacyConceptReplaced, 'CREWCHECK_EXPLORER');
+  assert.equal(capabilities.embeddedConcept, 'CREWCHECK_EXPLORER');
+  assert.equal(capabilities.embeddedBrand, 'VOYAGE');
+  assert.equal(capabilities.standaloneProductSeparate, true);
+  assert.ok(capabilities.embeddedScope.includes('FREE_TIME_DISCOVERY'));
+  assert.ok(capabilities.crewCheckNativeScope.includes('SMART_DEPARTURE'));
   assert.equal(capabilities.approval.requiredBeforeSharingRosterContext, true);
   assert.equal(capabilities.approval.automaticItineraryMutationAllowed, false);
 });
@@ -40,10 +44,12 @@ test('approved CrewCheck context only treats explicit off days as free', () => {
     }
   });
   assert.equal(result.status, 'READY');
+  assert.equal(result.embeddedMode, 'EXPLORER');
   assert.deepEqual(result.availability.explicitFreeDates, ['2026-09-10']);
   assert.deepEqual(result.availability.hardUnavailableDates, ['2026-09-11']);
   assert.deepEqual(result.availability.unknownDates, ['2026-09-12']);
   assert.equal(result.planningContext.policies.protectRequiredRestAndUnknownDays, true);
+  assert.equal(result.planningContext.policies.embeddedVoyageCompetesWithCrewCheckOperationalFunctions, false);
 });
 
 test('CrewCheck work flights are constraints and not silently converted into personal itinerary', () => {
@@ -64,10 +70,12 @@ test('CrewCheck work flights are constraints and not silently converted into per
   assert.equal(result.approval.itineraryMutationApproved, false);
 });
 
-test('bridge preview exposes Voyage integrated entry without allowing automatic mutation', () => {
+test('bridge preview exposes embedded Explorer mode and a separate standalone Voyage action', () => {
   const preview = buildCrewCheckBridgePreview({ userApprovedShare: true, roster: { period: '2026-09', days: [] } });
   assert.equal(preview.surface, 'VOYAGE_INTEGRATED');
   assert.equal(preview.legacySurface, 'CREWCHECK_EXPLORER');
+  assert.equal(preview.embeddedMode, 'EXPLORER');
   assert.equal(preview.entry.badge, 'Integrado ao CrewCheck');
+  assert.equal(preview.entry.secondaryAction, 'OPEN_STANDALONE_VOYAGE');
   assert.equal(preview.mutationPolicy.automaticApplyAllowed, false);
 });
