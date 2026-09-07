@@ -7,8 +7,8 @@ import { extractProviderTravelFacts } from './travel-provider-parsers.mjs';
 const MAX_PDF_BYTES = 15 * 1024 * 1024;
 const MAX_SCAN_BYTES = 8 * 1024 * 1024;
 const MAX_INFLATED_STREAM_BYTES = 4 * 1024 * 1024;
-const UNKNOWN_OPERATIONAL_CONTEXT = /(?:to\s+be\s+announced|to\s+be\s+confirmed|tba|tbd|a\s+confirmar|a\s+ser\s+informad[oa]|ser[aá]\s+informad[oa]|informado\s+no\s+aeroporto|ainda\s+n[aã]o\s+informad[oa])/i;
-const STOPWORD_OPERATIONAL_VALUES = new Set(['A', 'AS', 'DE', 'DO', 'DA', 'EM', 'NO', 'NA', 'TO', 'THE', 'SERA', 'SERÁ', 'TBA', 'TBD']);
+const UNKNOWN_OPERATIONAL_CONTEXT = /(?:to\s+be\s+announced|to\s+be\s+confirmed|tba|tbd|a\s+confirmar|a\s+ser\s+informad[oa]|ser[aá]\s+informad[oa]|informado\s+no\s+aeroporto|ainda\s+n[aã]o\s+informad[oa]|consulte\s+(?:o\s+)?painel|check\s+(?:the\s+)?display)/i;
+const OPERATIONAL_VALUE_FORMAT = /^(?:T?\d{1,2}[A-Z]?|[A-Z]\d{0,3}|[A-Z])$/;
 
 export function ingestPdfBuffer(buffer, options = {}) {
   if (!Buffer.isBuffer(buffer)) throw new Error('pdf_buffer_required');
@@ -50,6 +50,7 @@ export function ingestPdfBuffer(buffer, options = {}) {
   const resolvedCategory = classification.category === 'BOARDING_PASS'
     ? 'BOARDING_PASS'
     : providerParsing.category || classification.category;
+  const scanTruncated = extracted.warnings?.includes('PDF_SCAN_TRUNCATED_FOR_SAFETY') === true;
   const factWarnings = Object.entries(generic.factConfidence)
     .filter(([, value]) => value < 0.55)
     .map(([key]) => `LOW_CONFIDENCE_FACT_${key.toUpperCase()}`);
@@ -57,6 +58,7 @@ export function ingestPdfBuffer(buffer, options = {}) {
     || mergedText.trim().length < 20
     || effectiveConfidence < 0.55
     || classification.hintContradictsContent === true
+    || scanTruncated
     || factWarnings.length > 0;
 
   return Object.freeze({
@@ -89,6 +91,7 @@ export function ingestPdfBuffer(buffer, options = {}) {
         ...(mergedText.trim().length < 20 ? ['TEXT_EXTRACTION_INSUFFICIENT'] : []),
         ...(effectiveConfidence < 0.55 ? ['CLASSIFICATION_LOW_CONFIDENCE'] : []),
         ...(classification.hintContradictsContent ? ['HINT_CONTRADICTS_CONTENT'] : []),
+        ...(scanTruncated ? ['PDF_SCAN_TRUNCATED_FOR_SAFETY'] : []),
         ...factWarnings
       ]
     }
@@ -138,39 +141,39 @@ export function extractGenericTravelFactsWithConfidence(text = '', category = 'O
     /(?:confirmation|booking|reservation|reserva|localizador|record locator|pnr|voucher)(?:\s+(?:code|number|no\.?|nº|#))?\s*[:\-]?\s*([A-Z0-9]{5,14})/i,
     /\bPNR\s*[:\-]?\s*([A-Z0-9]{5,8})\b/i
   ]);
-  if (confirmation) { facts.confirmationCode = confirmation.toUpperCase(); factConfidence.confirmationCode = 0.86; }
+  if (confirmation) { facts.confirmationCode = confirmation.toUpperCase(); factConfidence.confirmationCode = 0.9; }
 
   if (['AIR_TRAVEL', 'BOARDING_PASS'].includes(category)) {
     const flight = compact.match(/(?:^|\s)(?:voo|vôo|flight)\s*[:#-]?\s*([A-Z]{2}|[A-Z]\d|\d[A-Z])\s*[- ]?(\d{2,4})\b/i);
     if (flight) {
       facts.marketingCarrier = flight[1].toUpperCase();
       facts.flightNumber = flight[2];
-      factConfidence.marketingCarrier = 0.9;
-      factConfidence.flightNumber = 0.9;
+      factConfidence.marketingCarrier = 0.94;
+      factConfidence.flightNumber = 0.94;
     }
   }
 
   const route = compact.match(/\b([A-Z]{3})\b\s*(?:→|->|>|-|to|para|a)\s*\b([A-Z]{3})\b/);
-  if (route) { facts.route = { origin: route[1], destination: route[2] }; factConfidence.route = 0.78; }
+  if (route) { facts.route = { origin: route[1], destination: route[2] }; factConfidence.route = 0.86; }
 
   const price = extractLabeledPrice(compact);
   if (price) {
     facts.priceText = price;
     facts.currency = detectCurrency(price);
-    factConfidence.priceText = 0.82;
-    if (facts.currency) factConfidence.currency = 0.9;
+    factConfidence.priceText = 0.9;
+    if (facts.currency) factConfidence.currency = 0.95;
   }
 
   const seat = firstMatch(compact, [/(?:seat|assento|poltrona)\s*[:\-]?\s*([0-9]{1,3}[A-Z]?)/i]);
-  if (seat) { facts.seat = seat.toUpperCase(); factConfidence.seat = 0.82; }
+  if (seat) { facts.seat = seat.toUpperCase(); factConfidence.seat = 0.9; }
 
-  const gate = extractOperationalValue(compact, /(?:gate|port[aã]o)\s*[:\-]?\s*([A-Z0-9]{1,6})/i);
-  if (gate) { facts.gate = gate; factConfidence.gate = 0.82; }
+  const gate = extractOperationalValue(compact, /(?:gate|port[aã]o)\s*[:\-]?\s*([A-Z0-9]{1,8})/i);
+  if (gate) { facts.gate = gate; factConfidence.gate = 0.94; }
   const terminal = extractOperationalValue(compact, /(?:terminal)\s*[:\-]?\s*([A-Z0-9]{1,8})/i);
-  if (terminal) { facts.terminal = terminal; factConfidence.terminal = 0.82; }
+  if (terminal) { facts.terminal = terminal; factConfidence.terminal = 0.92; }
 
   const providerStatus = extractProviderStatus(compact);
-  if (providerStatus) { facts.providerStatus = providerStatus; factConfidence.providerStatus = 0.9; }
+  if (providerStatus) { facts.providerStatus = providerStatus; factConfidence.providerStatus = 0.96; }
 
   const dates = [...compact.matchAll(/\b(\d{1,2}[\/\-.]\d{1,2}[\/\-.](?:\d{2}|\d{4}))\b/g)].slice(0, 6).map((m) => m[1]);
   if (dates.length) { facts.dateMentions = dates; factConfidence.dateMentions = 0.72; }
@@ -192,11 +195,11 @@ function extractOperationalValue(text, pattern) {
   const match = text.match(pattern);
   if (!match?.[1]) return null;
   const value = match[1].toUpperCase();
-  const start = Math.max(0, (match.index || 0) - 20);
-  const end = Math.min(text.length, (match.index || 0) + match[0].length + 80);
+  const start = Math.max(0, (match.index || 0) - 24);
+  const end = Math.min(text.length, (match.index || 0) + match[0].length + 96);
   const context = text.slice(start, end);
   if (UNKNOWN_OPERATIONAL_CONTEXT.test(context)) return null;
-  if (STOPWORD_OPERATIONAL_VALUES.has(value)) return null;
+  if (!OPERATIONAL_VALUE_FORMAT.test(value)) return null;
   return value;
 }
 
