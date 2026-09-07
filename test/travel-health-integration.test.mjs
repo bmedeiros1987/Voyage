@@ -4,7 +4,7 @@ import { buildJourneyReadiness, journeyReadinessCapabilities } from '../src/jour
 import { buildJourneyCommandCenter, journeyCommandCenterCapabilities } from '../src/journey-command-center.mjs';
 import { intelligenceHttpCapabilities } from '../src/intelligence-http.mjs';
 
-test('journey readiness exposes travel health dimension without degrading legacy trips that have not loaded it yet', () => {
+test('journey readiness exposes travel health dimension without injecting an unevaluated health check into legacy trips', () => {
   const capabilities = journeyReadinessCapabilities();
   assert.ok(capabilities.dimensions.includes('TRAVEL_HEALTH'));
 
@@ -22,7 +22,7 @@ test('journey readiness exposes travel health dimension without degrading legacy
   });
 
   assert.equal(legacy.status, 'READY');
-  assert.equal(legacy.score, 100);
+  assert.equal(legacy.checks.some((check) => check.dimension === 'TRAVEL_HEALTH'), false);
 });
 
 test('missing mandatory vaccine becomes a readiness blocker through command center', () => {
