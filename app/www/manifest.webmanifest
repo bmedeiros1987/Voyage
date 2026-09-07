@@ -1,13 +1,22 @@
 {
-  "name": "Voyage by CrewCheck",
+  "name": "Voyage",
   "short_name": "Voyage",
   "description": "Planeje. Viaje. Compartilhe. Viva mais.",
   "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#07111c",
   "theme_color": "#08131f",
   "orientation": "portrait-primary",
   "categories": ["travel", "lifestyle"],
+  "icons": [
+    {
+      "src": "../resources/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
   "share_target": {
     "action": "./share-pdf",
     "method": "POST",
