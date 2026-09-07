@@ -1,4 +1,4 @@
-const CACHE = 'voyage-shell-v6-pdf-share';
+const CACHE = 'voyage-shell-v7-responsive';
 const SHARED_PDF_CACHE = 'voyage-shared-pdf-v1';
 const CORE = [
   './',
@@ -8,6 +8,7 @@ const CORE = [
   './premium-layout.css',
   './premium-overrides.css',
   './signature-experience.css',
+  './responsive-hardening.css',
   './imports.css',
   './signature-experience.js',
   './app.js',
