@@ -321,6 +321,7 @@ function buildStaticMap() {
     ['styles.css', 'text/css; charset=utf-8'],
     ['themes.css', 'text/css; charset=utf-8'],
     ['imports.css', 'text/css; charset=utf-8'],
+    ['api-origin.js', 'text/javascript; charset=utf-8'],
     ['app.js', 'text/javascript; charset=utf-8'],
     ['import-enhancements.js', 'text/javascript; charset=utf-8'],
     ['service-worker.js', 'text/javascript; charset=utf-8'],

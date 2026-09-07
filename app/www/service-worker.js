@@ -1,4 +1,4 @@
-const CACHE = 'voyage-shell-v9-share-retention';
+const CACHE = 'voyage-shell-v10-api-origin';
 const SHARED_PDF_CACHE = 'voyage-shared-pdf-v1';
 const SHARED_PDF_PREFIX = '/__voyage_shared_pdf__/';
 const SHARED_PDF_TTL_MS = 30 * 60 * 1000;
@@ -12,6 +12,7 @@ const CORE = [
   './signature-experience.css',
   './responsive-hardening.css',
   './imports.css',
+  './api-origin.js',
   './signature-experience.js',
   './app.js',
   './import-enhancements.js',

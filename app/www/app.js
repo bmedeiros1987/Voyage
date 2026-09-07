@@ -1,3 +1,5 @@
+import { fetchApi } from './api-origin.js';
+
 const themeOverrides = document.createElement('link');
 themeOverrides.rel = 'stylesheet';
 themeOverrides.href = './themes.css';
@@ -220,11 +222,6 @@ async function refreshGmailStatus() {
     detail.textContent = 'O Gmail será sincronizado quando a API estiver acessível';
     dot.classList.remove('gmail-dot--ready');
   }
-}
-
-function fetchApi(path, options = {}) {
-  const base = (localStorage.getItem('voyage-api-base') || '').replace(/\/$/, '');
-  return fetch(`${base}${path}`, options);
 }
 
 function showShellNotice(message) {

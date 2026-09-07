@@ -33,6 +33,7 @@ const required = [
   'app/www/responsive-hardening.css',
   'app/www/signature-experience.js',
   'app/www/imports.css',
+  'app/www/api-origin.js',
   'app/www/app.js',
   'app/www/import-enhancements.js',
   'app/www/native-pdf-share.js',

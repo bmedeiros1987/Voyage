@@ -1,3 +1,5 @@
+import { fetchApi } from './api-origin.js';
+
 const SIGNATURE_VERSION = '1.1';
 
 document.documentElement.dataset.voyageSignature = '1';
@@ -247,8 +249,7 @@ function valueOf(result) {
 }
 
 async function apiJson(path) {
-  const base = (localStorage.getItem('voyage-api-base') || '').replace(/\/$/, '');
-  const response = await fetch(`${base}${path}`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+  const response = await fetchApi(path, { headers: { Accept: 'application/json' }, cache: 'no-store' });
   if (!response.ok) throw new Error(`signature_api_${response.status}`);
   return response.json();
 }

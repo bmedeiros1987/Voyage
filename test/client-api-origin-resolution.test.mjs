@@ -1,0 +1,79 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+
+const MODULE_URL = new URL('../app/www/api-origin.js', import.meta.url);
+
+test('with no build-time configuration the clients stay same-origin', async () => {
+  const { apiUrl, API_ORIGIN } = await loadWithMeta(null, 1);
+  assert.equal(API_ORIGIN, '');
+  assert.equal(apiUrl('/api/v1/config'), '/api/v1/config');
+});
+
+test('a packaged shell can point at its API through the build-time meta tag', async () => {
+  const { apiUrl, API_ORIGIN } = await loadWithMeta('https://voyage.example/', 2);
+  assert.equal(API_ORIGIN, 'https://voyage.example');
+  assert.equal(apiUrl('/api/v1/config'), 'https://voyage.example/api/v1/config');
+});
+
+test('an untrustworthy configured origin falls back to same-origin instead of being honoured', async () => {
+  const rejected = [
+    'http://voyage.example',
+    'javascript:alert(1)',
+    'https://user:secret@voyage.example',
+    'not a url',
+    '   '
+  ];
+  let index = 10;
+  for (const value of rejected) {
+    const { API_ORIGIN } = await loadWithMeta(value, index++);
+    assert.equal(API_ORIGIN, '', `${value} must not become the API origin`);
+  }
+});
+
+test('resolving the API origin never touches storage', async () => {
+  const accesses = [];
+  const trap = new Proxy({}, {
+    get(_target, property) {
+      accesses.push(String(property));
+      return () => { throw new Error('storage_must_not_be_read'); };
+    }
+  });
+  const { API_ORIGIN } = await loadWithMeta('https://voyage.example', 20, { localStorage: trap, sessionStorage: trap });
+  assert.equal(API_ORIGIN, 'https://voyage.example');
+  assert.deepEqual(accesses, []);
+});
+
+test('no client reaches the network without going through the single origin owner', async () => {
+  for (const path of ['app/www/app.js', 'app/www/import-enhancements.js', 'app/www/signature-experience.js']) {
+    const source = await readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+    assert.match(source, /import \{ fetchApi \} from '\.\/api-origin\.js';/, `${path} must use the shared origin owner`);
+    assert.doesNotMatch(source, /localStorage\.getItem\(\s*['"]voyage-api/, `${path} must not read an API base from storage`);
+  }
+});
+
+test('purging an expired raw blob also drops the raw extracted text', async () => {
+  const source = await readFile(new URL('../app/www/import-enhancements.js', import.meta.url), 'utf8');
+  const purge = source.slice(source.indexOf('async function purgeExpiredSyncedBlobs'));
+  assert.match(purge, /blob:\s*null/, 'the raw blob must still be dropped');
+  assert.match(purge, /textPreview:\s*''/, 'the raw extracted text must be dropped with the blob');
+  assert.match(purge, /retentionState:\s*'BLOB_PURGED'/);
+});
+
+async function loadWithMeta(content, cacheKey, extraGlobals = {}) {
+  const previous = { document: globalThis.document, localStorage: globalThis.localStorage, sessionStorage: globalThis.sessionStorage };
+  globalThis.document = {
+    querySelector(selector) {
+      if (selector !== 'meta[name="voyage-api-origin"]' || content === null) return null;
+      return { getAttribute: (name) => (name === 'content' ? content : null) };
+    }
+  };
+  Object.assign(globalThis, extraGlobals);
+  try {
+    return await import(`${MODULE_URL.href}?case=${cacheKey}`);
+  } finally {
+    globalThis.document = previous.document;
+    globalThis.localStorage = previous.localStorage;
+    globalThis.sessionStorage = previous.sessionStorage;
+  }
+}

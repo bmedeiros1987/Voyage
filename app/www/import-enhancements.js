@@ -1,3 +1,5 @@
+import { fetchApi } from './api-origin.js';
+
 const DB_NAME = 'voyage-local';
 const DB_VERSION = 1;
 const STORE = 'imports';
@@ -494,7 +496,13 @@ async function purgeExpiredSyncedBlobs() {
     if (!record?.blob || !record.syncedAt || record.status === 'LOCAL_QUEUED') continue;
     const reference = Date.parse(record.syncedAt || record.createdAt || '');
     if (!Number.isFinite(reference) || now - reference <= SYNCED_RAW_BLOB_TTL_MS) continue;
-    const updated = { ...record, blob: null, retentionState: 'BLOB_PURGED', rawBlobPurgedAt: new Date().toISOString() };
+    const updated = {
+      ...record,
+      blob: null,
+      textPreview: '',
+      retentionState: 'BLOB_PURGED',
+      rawBlobPurgedAt: new Date().toISOString()
+    };
     await putRecord(updated);
   }
 }
@@ -534,11 +542,6 @@ function requestResult(request) {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error || new Error('indexeddb_request_failed'));
   });
-}
-
-function fetchApi(path, options = {}) {
-  const base = (localStorage.getItem('voyage-api-base') || '').replace(/\/$/, '');
-  return fetch(`${base}${path}`, options);
 }
 
 async function sha256File(file) {
