@@ -50,9 +50,23 @@ async function dispatchPdfToUniversalImporter(file, sourceMode) {
 
   const transfer = new DataTransfer();
   transfer.items.add(file);
-  Object.defineProperty(input, 'files', { configurable: true, value: transfer.files });
+  try {
+    input.files = transfer.files;
+  } catch {
+    Object.defineProperty(input, 'files', { configurable: true, value: transfer.files });
+  }
   input.dataset.sourceMode = sourceMode;
   input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+
+  // Never leave an own frozen files property behind. Manual selection must keep
+  // using the browser's HTMLInputElement files getter after a shared import.
+  queueMicrotask(() => {
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(input, 'files');
+      if (descriptor?.configurable) delete input.files;
+      input.value = '';
+    } catch {}
+  });
 
   const importScreen = document.querySelector('[data-screen="imports"]');
   if (importScreen) {
