@@ -9,6 +9,7 @@ export function isConfigured(value) {
 export function getRuntimeConfig(env = process.env) {
   const appName = isConfigured(env.APP_NAME) ? env.APP_NAME.trim() : 'Voyage by CrewCheck';
   const appUrl = isConfigured(env.APP_URL) ? env.APP_URL.trim() : 'https://crewcheck.online/voyage';
+  const sessionSigningKey = isConfigured(env.SESSION_SIGNING_KEY) && env.SESSION_SIGNING_KEY.trim().length >= 32 ? env.SESSION_SIGNING_KEY.trim() : null;
 
   return Object.freeze({
     nodeEnv: env.NODE_ENV || 'development',
@@ -16,6 +17,10 @@ export function getRuntimeConfig(env = process.env) {
     appName,
     appUrl,
     databaseConfigured: isConfigured(env.DATABASE_URL),
+    session: Object.freeze({
+      configured: Boolean(sessionSigningKey),
+      signingKey: sessionSigningKey
+    }),
     google: Object.freeze({
       loginConfigured: isConfigured(env.GOOGLE_CLIENT_ID) && isConfigured(env.GOOGLE_CLIENT_SECRET),
       redirectConfigured: isConfigured(env.GOOGLE_REDIRECT_URI),
@@ -45,6 +50,7 @@ export function publicConfig(config = getRuntimeConfig()) {
     appUrl: config.appUrl,
     environment: config.nodeEnv,
     integrations: {
+      authenticatedSession: config.session.configured,
       googleLogin: config.google.loginConfigured,
       gmailTravelImport: config.google.gmailConfigured,
       gmailPushSync: config.google.gmailConfigured && config.google.pubsubConfigured,
