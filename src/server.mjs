@@ -48,6 +48,10 @@ const server = http.createServer(async (req, res) => {
   try {
     setSecurityHeaders(res, requestId);
 
+    if (path === null) {
+      return json(res, 400, { error: 'invalid_request_path', requestId });
+    }
+
     if (req.method === 'OPTIONS') {
       res.statusCode = 204;
       res.end();
@@ -400,8 +404,18 @@ function header(req, name) {
   return Array.isArray(value) ? value[0] : value ? String(value) : null;
 }
 
+/**
+ * Returns the request pathname, or null when the request target is ambiguous.
+ * A protocol-relative target such as //evil.com/health parses as a URL whose
+ * authority is silently dropped, which would route //health to the shell with
+ * a 200 and let a proxy in front of us disagree with us about the route.
+ */
 function safePath(url = '/') {
-  try { return new URL(url, 'http://localhost').pathname; } catch { return '/'; }
+  if (typeof url !== 'string' || !url.startsWith('/') || url.startsWith('//')) return null;
+  let pathname;
+  try { pathname = new URL(url, 'http://localhost').pathname; } catch { return null; }
+  if (!pathname.startsWith('/') || pathname.startsWith('//')) return null;
+  return pathname;
 }
 
 function namedError(message) {
