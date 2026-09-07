@@ -6,6 +6,7 @@ import { departureIntelligenceCapabilities, buildDepartureDecision } from './dep
 import { weatherPlanningCapabilities, evaluateActivityWeather, buildWeatherReplacementPlan } from './weather-intelligence.mjs';
 import { airportConnectionCapabilities, buildAirportConnectionPlan, knownAirportConnectionFacts } from './airport-connection-intelligence.mjs';
 import { baggageIntelligenceCapabilities, buildBaggageConnectionDecision } from './baggage-intelligence.mjs';
+import { baggagePassportCapabilities, analyzeBaggagePassport } from './baggage-passport-intelligence.mjs';
 import { airportIndoorNavigationCapabilities, buildAirportIndoorRoute } from './airport-indoor-navigation.mjs';
 import { arrivalIntelligenceCapabilities, buildArrivalIntelligence } from './arrival-intelligence.mjs';
 import { journeyReadinessCapabilities, buildJourneyReadiness } from './journey-readiness.mjs';
@@ -23,6 +24,7 @@ const GET_ROUTES = new Map([
   ['/api/v1/weather/capabilities', weatherPlanningCapabilities],
   ['/api/v1/airport-connections/capabilities', airportConnectionCapabilities],
   ['/api/v1/baggage/capabilities', baggageIntelligenceCapabilities],
+  ['/api/v1/baggage/passport/capabilities', baggagePassportCapabilities],
   ['/api/v1/airports/indoor/capabilities', airportIndoorNavigationCapabilities],
   ['/api/v1/journey/arrival/capabilities', arrivalIntelligenceCapabilities],
   ['/api/v1/journey/readiness/capabilities', journeyReadinessCapabilities],
@@ -40,6 +42,7 @@ const POST_ROUTES = new Map([
   ['/api/v1/departure/decision', buildDepartureDecision],
   ['/api/v1/airport-connections/plan', buildAirportConnectionPlan],
   ['/api/v1/baggage/connection', buildBaggageConnectionDecision],
+  ['/api/v1/baggage/passport/analyze', analyzeBaggagePassport],
   ['/api/v1/airports/indoor/route', buildAirportIndoorRoute],
   ['/api/v1/journey/arrival/preview', buildArrivalIntelligence],
   ['/api/v1/journey/readiness', buildJourneyReadiness],
@@ -50,7 +53,7 @@ const POST_ROUTES = new Map([
 
 export function intelligenceHttpCapabilities() {
   return {
-    version: '1.1',
+    version: '1.2',
     getRoutes: [...GET_ROUTES.keys()],
     postRoutes: [...POST_ROUTES.keys(), '/api/v1/weather/activity-check', '/api/v1/weather/replacement-plan'],
     policy: {
