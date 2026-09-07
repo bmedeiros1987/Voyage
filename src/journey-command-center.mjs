@@ -120,7 +120,7 @@ export function buildJourneyCommandCenter(input = {}) {
     readiness
   });
 
-  const proposal = buildMutationProposal(input.proposedChanges || input.proposal, input.userApproval);
+  const proposal = buildMutationProposal(input.proposedChanges || input.proposal);
 
   return {
     version: '1.1',
@@ -249,13 +249,15 @@ function buildOperationalAlerts({ departure, airportConnection, baggage, indoorN
   return dedupeAlerts(alerts);
 }
 
-function buildMutationProposal(proposedChanges, userApproval) {
+function buildMutationProposal(proposedChanges) {
   if (!proposedChanges) return null;
   const changes = Array.isArray(proposedChanges) ? proposedChanges : proposedChanges.changes || [];
-  const approved = userApproval === true || proposedChanges.userApproved === true;
+  // Proposal creation carries no approval semantics. Any userApproved flag in the
+  // request body is ignored on purpose: approval is a separate authenticated
+  // request against a server-issued proposalId and version (see src/proposals.mjs).
   return {
-    state: approved ? 'APPROVED' : 'AWAITING_USER_APPROVAL',
-    approved,
+    state: 'AWAITING_USER_APPROVAL',
+    approved: false,
     changes: changes.slice(0, 100).map((change, index) => ({
       id: String(change.id || `change-${index + 1}`),
       type: String(change.type || 'ITINERARY_CHANGE').toUpperCase(),
@@ -263,9 +265,10 @@ function buildMutationProposal(proposedChanges, userApproval) {
       before: change.before ?? null,
       after: change.after ?? null
     })),
-    canApply: approved,
+    canApply: false,
     automaticApplyAllowed: false,
-    userApprovalRequired: !approved
+    userApprovalRequired: true,
+    approvalRoute: 'POST /api/v1/proposals/:id/approve'
   };
 }
 

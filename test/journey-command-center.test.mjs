@@ -134,7 +134,10 @@ test('proposed itinerary change remains proposal-only until user approval', () =
   assert.equal(proposalOnly.proposal.canApply, false);
   assert.equal(proposalOnly.mutationPolicy.executionState, 'PROPOSAL_ONLY');
 
-  const approved = buildJourneyCommandCenter({
+  // A userApproval flag travelling in the same request that proposes the change
+  // must NOT approve it. Approval is a separate authenticated request against a
+  // server-issued proposalId and version (src/proposals.mjs).
+  const selfApproved = buildJourneyCommandCenter({
     proposedChanges: [{ id: 'move-tour', type: 'MOVE_ACTIVITY', before: '10:00', after: '15:00' }],
     userApproval: true,
     readiness: {
@@ -151,7 +154,8 @@ test('proposed itinerary change remains proposal-only until user approval', () =
     }
   });
 
-  assert.equal(approved.proposal.state, 'APPROVED');
-  assert.equal(approved.proposal.canApply, true);
-  assert.equal(approved.mutationPolicy.executionState, 'APPROVED_CHANGE');
+  assert.equal(selfApproved.proposal.state, 'AWAITING_USER_APPROVAL');
+  assert.equal(selfApproved.proposal.canApply, false);
+  assert.equal(selfApproved.proposal.approvalRoute, 'POST /api/v1/proposals/:id/approve');
+  assert.equal(selfApproved.mutationPolicy.executionState, 'PROPOSAL_ONLY');
 });

@@ -2,6 +2,15 @@ import { access } from 'node:fs/promises';
 
 const required = [
   'src/server.mjs',
+  'src/ecosystem-identity.mjs',
+  'src/auth-provider.mjs',
+  'src/session.mjs',
+  'src/pubsub-verification.mjs',
+  'src/persistence.mjs',
+  'src/proposals.mjs',
+  'src/entitlements.mjs',
+  'src/calendar-boundary.mjs',
+  'src/identity-http.mjs',
   'src/config.mjs',
   'src/availability.mjs',
   'src/travel-source.mjs',
@@ -24,6 +33,7 @@ const required = [
   'src/crewcheck-http-integration.mjs',
   'db/001_initial.sql',
   'db/002_universal_importer.sql',
+  'db/006_identity_and_entitlements.sql',
   'app/www/index.html',
   'app/www/styles.css',
   'app/www/themes.css',

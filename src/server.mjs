@@ -11,11 +11,17 @@ import { buildAutomaticPlan, buildExportManifest, collaborationCapabilities, nor
 import { buildDietaryTravelCard, buildGroupDietarySummary, dietaryCapabilities, evaluateFoodCandidate } from './dietary-profile.mjs';
 import { assessPlanQuality, buildPlanningBrief, buildPlanningStrategy, buildPreferenceLearningEvent, buildReplanDecision, plannerBrainCapabilities } from './planner-brain.mjs';
 import { handleCrewCheckIntegrationHttp } from './crewcheck-http-integration.mjs';
+import { authenticateRequest } from './session.mjs';
+import { handleIdentityHttp } from './identity-http.mjs';
+import { createMemoryRepository } from './persistence.mjs';
+import { verifyPubSubPushRequest } from './pubsub-verification.mjs';
 
 const config = getRuntimeConfig();
 const MAX_JSON_BYTES = 256 * 1024;
 const MAX_PDF_BYTES = 15 * 1024 * 1024;
 const STATIC_FILES = buildStaticMap();
+const SESSION_SIGNING_KEY = process.env.SESSION_SIGNING_KEY || randomUUID();
+const repository = createMemoryRepository();
 
 const server = http.createServer(async (req, res) => {
   const requestId = randomUUID();
@@ -30,6 +36,18 @@ const server = http.createServer(async (req, res) => {
       res.end();
       return;
     }
+
+    // Every endpoint is private unless it is on the explicit public allowlist.
+    const auth = authenticateRequest(req, path, { signingKey: SESSION_SIGNING_KEY });
+    if (!auth.allowed) {
+      return json(res, 401, { error: 'authentication_required', reason: auth.reason, requestId });
+    }
+
+    if (await handleIdentityHttp(req, res, path, {
+      repository,
+      signingKey: SESSION_SIGNING_KEY,
+      session: auth.session
+    })) return;
 
     if (await handleCrewCheckIntegrationHttp(req, res, path)) return;
 
@@ -124,6 +142,14 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && path === '/api/v1/integrations/gmail/pubsub') {
+      const verification = await verifyPubSubPushRequest(req, {
+        audience: process.env.GOOGLE_PUBSUB_AUDIENCE || null,
+        serviceAccountEmail: process.env.GOOGLE_PUBSUB_SERVICE_ACCOUNT || null,
+        verifySignature: pubSubSignatureVerifier()
+      });
+      if (!verification.verified) {
+        return json(res, verification.statusCode, { error: verification.reason, requestId });
+      }
       const body = await readJson(req, MAX_JSON_BYTES);
       const notification = parseGmailPubSubEnvelope(body);
       return json(res, 202, {
@@ -263,6 +289,12 @@ const server = http.createServer(async (req, res) => {
 server.listen(config.port, '0.0.0.0', () => {
   console.log(JSON.stringify({ level: 'info', event: 'server_started', service: 'voyage-api', port: config.port, environment: config.nodeEnv }));
 });
+
+// Supplied by the deployment. Until a real JWKS verifier is wired in, this returns
+// null so verifyPubSubPushRequest fails closed instead of trusting the caller.
+function pubSubSignatureVerifier() {
+  return null;
+}
 
 function buildStaticMap() {
   const definitions = [
