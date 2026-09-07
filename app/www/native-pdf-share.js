@@ -1,5 +1,9 @@
 queueMicrotask(() => installNativePdfShare().catch(() => {}));
 
+const SHARED_PDF_CACHE = 'voyage-shared-pdf-v1';
+const SHARED_PDF_PREFIX = '/__voyage_shared_pdf__/';
+const SHARED_PDF_TTL_MS = 30 * 60 * 1000;
+
 async function installNativePdfShare() {
   await consumeNativePdfShare();
   document.addEventListener('visibilitychange', () => {
@@ -8,7 +12,7 @@ async function installNativePdfShare() {
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', (event) => {
-      if (event.data?.type === 'VOYAGE_PDF_SHARE_READY') consumeWebShareTarget().catch(() => {});
+      if (event.data?.type === 'VOYAGE_PDF_SHARE_READY') consumeWebShareTarget(event.data.shareId).catch(() => {});
     });
   }
 
@@ -27,21 +31,56 @@ async function consumeNativePdfShare() {
   return dispatchPdfToUniversalImporter(file, 'ANDROID_SHARE');
 }
 
-async function consumeWebShareTarget() {
+async function consumeWebShareTarget(explicitShareId = null) {
   const url = new URL(window.location.href);
-  if (url.searchParams.get('shared') !== 'pdf') return false;
+  const shareId = explicitShareId || url.searchParams.get('share');
+  if (url.searchParams.get('shared') !== 'pdf' && !shareId) return false;
 
-  const cache = await caches.open('voyage-shared-pdf-v1');
-  const response = await cache.match('/__voyage_shared_pdf__');
-  if (!response) return false;
+  const cache = await caches.open(SHARED_PDF_CACHE);
+  await purgeExpiredSharedPdfs(cache);
+  const match = shareId ? await getSharedPdfById(cache, shareId) : await getNewestSharedPdf(cache);
+  if (!match) return false;
 
+  const { key, response } = match;
   const blob = await response.blob();
   const name = response.headers.get('x-voyage-filename') || 'documento.pdf';
-  await cache.delete('/__voyage_shared_pdf__');
+  await cache.delete(key);
   url.searchParams.delete('shared');
+  url.searchParams.delete('share');
   history.replaceState({}, '', url.pathname + url.search + url.hash);
   const file = new File([blob], safePdfName(name), { type: 'application/pdf' });
   return dispatchPdfToUniversalImporter(file, 'PWA_SHARE_TARGET');
+}
+
+async function getSharedPdfById(cache, shareId) {
+  if (!/^[a-zA-Z0-9-]{16,80}$/.test(String(shareId || ''))) return null;
+  const key = `${SHARED_PDF_PREFIX}${shareId}`;
+  const response = await cache.match(key);
+  return response ? { key, response } : null;
+}
+
+async function getNewestSharedPdf(cache) {
+  let newest = null;
+  for (const request of await cache.keys()) {
+    const parsed = new URL(request.url);
+    if (!parsed.pathname.startsWith(SHARED_PDF_PREFIX)) continue;
+    const response = await cache.match(request);
+    const sharedAt = Number(response?.headers.get('x-voyage-shared-at') || 0);
+    if (!response || !sharedAt) continue;
+    if (!newest || sharedAt > newest.sharedAt) newest = { key: request, response, sharedAt };
+  }
+  return newest;
+}
+
+async function purgeExpiredSharedPdfs(cache) {
+  const now = Date.now();
+  for (const request of await cache.keys()) {
+    const parsed = new URL(request.url);
+    if (!parsed.pathname.startsWith(SHARED_PDF_PREFIX)) continue;
+    const response = await cache.match(request);
+    const sharedAt = Number(response?.headers.get('x-voyage-shared-at') || 0);
+    if (!sharedAt || now - sharedAt > SHARED_PDF_TTL_MS) await cache.delete(request);
+  }
 }
 
 async function dispatchPdfToUniversalImporter(file, sourceMode) {
