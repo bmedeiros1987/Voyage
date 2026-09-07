@@ -7,5 +7,18 @@
   "background_color": "#07111c",
   "theme_color": "#08131f",
   "orientation": "portrait-primary",
-  "categories": ["travel", "lifestyle"]
+  "categories": ["travel", "lifestyle"],
+  "share_target": {
+    "action": "./share-pdf",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "pdf",
+          "accept": ["application/pdf", ".pdf"]
+        }
+      ]
+    }
+  }
 }
