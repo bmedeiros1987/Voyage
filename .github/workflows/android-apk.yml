@@ -39,7 +39,10 @@ jobs:
       - name: Verify PDF share target survived sync
         run: |
           grep -q 'android.intent.action.SEND' android/app/src/main/AndroidManifest.xml
-          grep -q 'VoyagePdfSharePlugin' android/app/src/main/java/com/crewcheck/voyage/MainActivity.kt
+          ! grep -q 'android.intent.action.VIEW' android/app/src/main/AndroidManifest.xml
+          test -f android/app/src/main/java/com/crewcheck/voyage/MainActivity.java
+          test -f android/app/src/main/java/com/crewcheck/voyage/VoyagePdfSharePlugin.java
+          grep -q 'VoyagePdfSharePlugin' android/app/src/main/java/com/crewcheck/voyage/MainActivity.java
       - name: Build debug APK
         run: |
           chmod +x android/gradlew
