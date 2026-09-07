@@ -1,10 +1,21 @@
 import { randomUUID } from 'node:crypto';
 
+export function createRuntimePersistence({ nodeEnv = 'development', databaseConfigured = false, execute } = {}) {
+  const environment = String(nodeEnv || 'development').trim().toLowerCase();
+  if (databaseConfigured) {
+    if (typeof execute !== 'function') throw namedError('tidb_execute_required', 503);
+    return createTidbPersistence({ execute });
+  }
+  if (environment === 'production') throw namedError('production_persistence_required', 503);
+  return createMemoryPersistence();
+}
+
 export function createMemoryPersistence() {
   const sessions = new Map();
   const proposals = new Map();
   return Object.freeze({
     kind: 'memory',
+    durability: 'ephemeral',
     async putSession(session) {
       validateSessionRecord(session);
       sessions.set(session.id, structuredClone(session));
@@ -40,9 +51,10 @@ export function createMemoryPersistence() {
 }
 
 export function createTidbPersistence({ execute } = {}) {
-  if (typeof execute !== 'function') throw namedError('tidb_execute_required');
+  if (typeof execute !== 'function') throw namedError('tidb_execute_required', 503);
   return Object.freeze({
     kind: 'tidb',
+    durability: 'persistent',
     async putSession(session) {
       validateSessionRecord(session);
       await execute(
