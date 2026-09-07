@@ -96,3 +96,22 @@ test('PWA shared PDFs use unique keys and bounded retention instead of a permane
   assert.match(bridge, /getNewestSharedPdf/);
   assert.match(bridge, /purgeExpiredSharedPdfs/);
 });
+
+test('Universal importer has a single frontend owner and review is evidence-first', async () => {
+  const app = await text('app/www/app.js');
+  const importer = await text('app/www/import-enhancements.js');
+  const css = await text('app/www/imports.css');
+
+  assert.doesNotMatch(app, /queuePdfImport|openImportDb|putImport|listImports|syncQueuedImports/);
+  assert.doesNotMatch(app, /data-import-files[^\n]*addEventListener\(['"]change/);
+  assert.match(app, /voyage:imports-open/);
+
+  assert.match(importer, /input\.addEventListener\(['"]change['"]/);
+  assert.match(importer, /data-review-evidence/);
+  assert.match(importer, /extractedFacts/);
+  assert.match(importer, /factConfidence/);
+  assert.match(importer, /Nenhum arquivo foi marcado como salvo/);
+  assert.match(importer, /SYNCED_RAW_BLOB_TTL_MS/);
+  assert.match(importer, /deleteRecord/);
+  assert.match(css, /import-review-evidence/);
+});
