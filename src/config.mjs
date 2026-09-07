@@ -7,12 +7,17 @@ export function isConfigured(value) {
 }
 
 export function getRuntimeConfig(env = process.env) {
+  const nodeEnv = String(env.NODE_ENV || 'development').trim().toLowerCase();
   const appName = isConfigured(env.APP_NAME) ? env.APP_NAME.trim() : 'Voyage by CrewCheck';
   const appUrl = isConfigured(env.APP_URL) ? env.APP_URL.trim() : 'https://crewcheck.online/voyage';
   const sessionSigningKey = isConfigured(env.SESSION_SIGNING_KEY) && env.SESSION_SIGNING_KEY.trim().length >= 32 ? env.SESSION_SIGNING_KEY.trim() : null;
 
+  if (nodeEnv === 'production' && !sessionSigningKey) {
+    throw configurationError('session_signing_key_required');
+  }
+
   return Object.freeze({
-    nodeEnv: env.NODE_ENV || 'development',
+    nodeEnv,
     port: Number(env.PORT || 10000),
     appName,
     appUrl,
@@ -59,4 +64,11 @@ export function publicConfig(config = getRuntimeConfig()) {
       fxAndCepReady: config.sharedCrewCheck.configured || config.awesomeApi.configured
     }
   };
+}
+
+function configurationError(code) {
+  const error = new Error(code);
+  error.code = code;
+  error.statusCode = 500;
+  return error;
 }
