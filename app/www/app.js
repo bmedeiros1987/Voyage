@@ -168,7 +168,7 @@ function injectImportCenter() {
         <label class="import-dropzone">
           <strong>Selecionar um ou vários PDFs</strong>
           <small>O Voyage aceita também documentos desconhecidos: eles entram como “Outro” para você não perder nada.</small>
-          <span class="button button--gold" style="display:grid;place-items:center;min-height:44px;max-width:260px">Escolher arquivos</span>
+          <span class="button button--gold import-dropzone__cta">Escolher arquivos</span>
           <input type="file" accept="application/pdf,.pdf" multiple data-import-files />
         </label>
         <select class="import-category" data-import-category aria-label="Tipo do documento">

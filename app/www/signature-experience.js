@@ -81,7 +81,7 @@ function injectSignatureCommandCenter() {
         <span class="signature-live-pill"><i></i><span data-signature-platform-label>Verificando</span></span>
       </div>
       <div class="signature-readiness">
-        <div class="signature-ring" data-signature-ring style="--score:0"><strong data-signature-score>—</strong></div>
+        <div class="signature-ring" data-signature-ring><strong data-signature-score>—</strong></div>
         <div><h3>Prontidão tecnológica</h3><p>Mostra se as camadas necessárias para a experiência estão acessíveis. A prontidão da sua viagem é calculada separadamente quando uma jornada estiver ativa.</p><small data-signature-readiness-label>Aguardando diagnóstico…</small></div>
       </div>
       <div class="signature-system-grid">
