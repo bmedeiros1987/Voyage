@@ -27,6 +27,7 @@ test('Signature assets load before app navigation is initialized', async () => {
   assert.match(html, /premium-layout\.css/);
   assert.match(html, /premium-overrides\.css/);
   assert.match(html, /signature-experience\.css/);
+  assert.match(html, /responsive-hardening\.css/);
   const signatureIndex = html.indexOf('signature-experience.js');
   const appIndex = html.indexOf('app.js');
   assert.ok(signatureIndex > 0 && appIndex > signatureIndex, 'Signature must inject the command screen before app.js captures screen navigation');
@@ -48,8 +49,15 @@ test('Signature UI is premium, service-backed and does not invent trip readiness
   assert.match(css, /prefers-reduced-motion/);
 });
 
-test('premium assets are served by the early Voyage router at root and /voyage paths', async () => {
-  for (const path of ['/premium-layout.css', '/voyage/premium-overrides.css', '/signature-experience.js', '/voyage/signature-experience.css']) {
+test('premium and responsive assets are served by the early Voyage router at root and /voyage paths', async () => {
+  for (const path of [
+    '/premium-layout.css',
+    '/voyage/premium-overrides.css',
+    '/signature-experience.js',
+    '/voyage/signature-experience.css',
+    '/responsive-hardening.css',
+    '/voyage/native-pdf-share.js'
+  ]) {
     const req = Readable.from([]);
     req.method = 'GET';
     req.headers = {};
@@ -61,10 +69,17 @@ test('premium assets are served by the early Voyage router at root and /voyage p
   }
 });
 
-test('service worker caches Signature shell resources', async () => {
+test('service worker caches the current Signature shell resources', async () => {
   const sw = await text('app/www/service-worker.js');
-  assert.match(sw, /voyage-shell-v5-signature/);
-  for (const resource of ['premium-layout.css', 'premium-overrides.css', 'signature-experience.css', 'signature-experience.js']) {
+  assert.match(sw, /voyage-shell-v\d+-[a-z0-9-]+/);
+  for (const resource of [
+    'premium-layout.css',
+    'premium-overrides.css',
+    'signature-experience.css',
+    'responsive-hardening.css',
+    'signature-experience.js',
+    'native-pdf-share.js'
+  ]) {
     assert.ok(sw.includes(`'./${resource}'`), resource);
   }
 });
