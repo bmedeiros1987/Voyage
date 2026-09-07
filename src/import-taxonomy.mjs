@@ -36,23 +36,40 @@ export function classifyTravelDocument(text = '', hintedCategory = null) {
 
   if (hint) {
     const match = scored.find((item) => item.category === hint);
+    const winner = scored[0] || null;
+    const contradictsContent = Boolean(winner && winner.category !== hint && winner.score >= Math.max(2, (match?.score || 0) + 1));
+    if (contradictsContent) {
+      return Object.freeze({
+        category: hint,
+        confidence: clamp(Math.min(0.5, 0.34 + Math.min(0.14, (match?.score || 0) * 0.03))),
+        evidence: [...new Set([...(match?.evidence || []), 'user_hint', 'HINT_CONTRADICTS_CONTENT'])],
+        alternatives: scored.filter((item) => item.category !== hint).slice(0, 3),
+        hintContradictsContent: true,
+        contentWinner: winner.category
+      });
+    }
+
     return Object.freeze({
       category: hint,
-      confidence: clamp(0.72 + Math.min(0.24, (match?.score || 0) * 0.03)),
-      evidence: match?.evidence || ['user_hint'],
-      alternatives: scored.filter((item) => item.category !== hint).slice(0, 3)
+      confidence: clamp(0.5 + Math.min(0.26, (match?.score || 0) * 0.035)),
+      evidence: match?.evidence?.length ? match.evidence : ['user_hint'],
+      alternatives: scored.filter((item) => item.category !== hint).slice(0, 3),
+      hintContradictsContent: false,
+      contentWinner: winner?.category || null
     });
   }
 
   const winner = scored[0];
-  if (!winner) return Object.freeze({ category: 'OTHER', confidence: 0.25, evidence: [], alternatives: [] });
+  if (!winner) return Object.freeze({ category: 'OTHER', confidence: 0.25, evidence: [], alternatives: [], hintContradictsContent: false, contentWinner: null });
   const runnerUp = scored[1]?.score || 0;
   const separation = Math.max(0, winner.score - runnerUp);
   return Object.freeze({
     category: winner.category,
     confidence: clamp(0.48 + Math.min(0.36, winner.score * 0.045) + Math.min(0.12, separation * 0.02)),
     evidence: winner.evidence,
-    alternatives: scored.slice(1, 4)
+    alternatives: scored.slice(1, 4),
+    hintContradictsContent: false,
+    contentWinner: winner.category
   });
 }
 
@@ -65,7 +82,7 @@ export function supportedImportCapabilities() {
     categories: DOCUMENT_CATEGORIES,
     sourceModes: ['MANUAL_PDF', 'MANUAL_ENTRY', 'GMAIL_REALTIME', 'GMAIL_ATTACHMENT', 'ICALENDAR'],
     contentSniffing: true,
-    designPrinciple: 'Unknown documents remain importable as OTHER/NEEDS_REVIEW. File signatures and content matter more than unreliable provider MIME labels.'
+    designPrinciple: 'Unknown documents remain importable as OTHER/NEEDS_REVIEW. User category hints never override contradictory content with high confidence.'
   });
 }
 
