@@ -2,9 +2,10 @@ const LEVELS = new Set(['OK', 'INFO', 'WARNING', 'BLOCKER', 'UNKNOWN']);
 
 export function journeyReadinessCapabilities() {
   return {
-    version: '1.0',
+    version: '1.1',
     dimensions: [
       'TRAVEL_DOCUMENTS',
+      'TRAVEL_HEALTH',
       'TRANSPORT_CONTINUITY',
       'LODGING_COVERAGE',
       'BUDGET',
@@ -19,8 +20,9 @@ export function journeyReadinessCapabilities() {
       'Check whether the trip is operationally complete before departure rather than waiting for the user to discover missing pieces during the journey.',
       'Distinguish blockers from warnings so the user knows what truly prevents a safe or feasible journey.',
       'Never assume a missing fact is fine; mark it unknown and request verification when it can affect feasibility.',
+      'Treat destination vaccine entry requirements separately from health recommendations and route clinical decisions to a qualified health professional.',
       'Do not automatically purchase, book, cancel or mutate the itinerary while resolving readiness issues.',
-      'Keep the checklist dynamic: a trip can move from READY to ATTENTION when weather, baggage or connection facts change.'
+      'Keep the checklist dynamic: a trip can move from READY to ATTENTION when weather, baggage, health-entry rules or connection facts change.'
     ]
   };
 }
@@ -28,6 +30,7 @@ export function journeyReadinessCapabilities() {
 export function buildJourneyReadiness(input = {}) {
   const checks = [
     checkDocuments(input.documents || {}),
+    ...(input.travelHealth !== undefined ? [checkTravelHealth(input.travelHealth || {})] : []),
     checkTransport(input.transport || {}),
     checkLodging(input.lodging || {}),
     checkBudget(input.budget || {}),
@@ -48,7 +51,7 @@ export function buildJourneyReadiness(input = {}) {
     .map((check) => ({ dimension: check.dimension, level: check.level, action: check.action, reason: check.summary }));
 
   return {
-    version: '1.0',
+    version: '1.1',
     status: blockers.length ? 'BLOCKED' : warnings.length ? 'ATTENTION' : 'READY',
     score,
     checks,
@@ -65,6 +68,25 @@ function checkDocuments(input) {
   if (input.valid === false || input.missingRequired === true) return result('TRAVEL_DOCUMENTS', 'BLOCKER', 'Há documento obrigatório ausente ou inválido.', 'VERIFY_OR_OBTAIN_REQUIRED_TRAVEL_DOCUMENT');
   if (input.valid === true) return result('TRAVEL_DOCUMENTS', 'OK', 'Documentação necessária informada como válida.');
   return result('TRAVEL_DOCUMENTS', 'UNKNOWN', 'Validade da documentação ainda não foi confirmada.', 'VERIFY_TRAVEL_DOCUMENTS');
+}
+
+function checkTravelHealth(input) {
+  if (input.requiredMissing > 0 || input.entryRequirementsSatisfied === false && input.evaluated === true) {
+    return result('TRAVEL_HEALTH', 'BLOCKER', 'Há exigência sanitária de entrada ainda não atendida ou comprovada.', 'RESOLVE_REQUIRED_TRAVEL_VACCINE_OR_CERTIFICATE');
+  }
+  if (input.ruleVerificationRequired === true || input.evaluated === false) {
+    return result('TRAVEL_HEALTH', 'UNKNOWN', 'As exigências de vacinação do destino, conexões ou países anteriores ainda precisam ser verificadas.', 'VERIFY_DESTINATION_VACCINE_REQUIREMENTS');
+  }
+  if (input.clinicianReviewRequired === true) {
+    return result('TRAVEL_HEALTH', 'WARNING', 'Há orientação de saúde de viagem que requer avaliação de um profissional antes da partida.', 'SEEK_TRAVEL_HEALTH_CLINIC_GUIDANCE');
+  }
+  if (input.recommendationsOutstanding > 0) {
+    return result('TRAVEL_HEALTH', 'WARNING', 'Há vacina recomendada para a viagem ainda não registrada como atendida.', 'REVIEW_RECOMMENDED_TRAVEL_VACCINES');
+  }
+  if (input.evaluated === true && input.entryRequirementsSatisfied === true) {
+    return result('TRAVEL_HEALTH', 'OK', 'Exigências sanitárias de entrada avaliadas e sem pendência obrigatória conhecida.');
+  }
+  return result('TRAVEL_HEALTH', 'INFO', 'Nenhuma pendência sanitária de viagem foi informada.');
 }
 
 function checkTransport(input) {
