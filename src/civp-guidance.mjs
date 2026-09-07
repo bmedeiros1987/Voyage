@@ -32,6 +32,7 @@ export function buildBrazilCivpGuide(input = {}) {
   const departureDate = safeDate(input.departureDate || input.arrivalDate || input.travelDate);
   const doseFractionated = input.doseFractionated === true;
   const medicallyEligible = triState(input.medicallyEligible);
+  const validity = vaccinationDate ? addDays(vaccinationDate, 10) : null;
 
   if (vaccine !== 'YELLOW_FEVER') {
     return {
@@ -58,11 +59,10 @@ export function buildBrazilCivpGuide(input = {}) {
     return result('DOSE_REVIEW_REQUIRED', 'O registro informado indica dose fracionada. Para emissão do CIVP de febre amarela, a Anvisa informa que a dose fracionada não é aceita. Confirme o esquema adequado com um serviço de saúde.', 'REVIEW_YELLOW_FEVER_DOSE_WITH_HEALTH_SERVICE');
   }
 
-  const validity = vaccinationDate ? addDays(vaccinationDate, 10) : null;
   const timingBlocked = validity && departureDate && validity > departureDate;
   if (timingBlocked) {
     return {
-      ...result('NOT_VALID_BY_TRAVEL_DATE', `A vacinação foi informada, mas o CIVP só passa a ter validade internacional 10 dias depois da dose. Pela data fornecida, ele ainda não estará válido na data da viagem.`, 'REVIEW_TRAVEL_TIMING_AND_ENTRY_RULE'),
+      ...result('NOT_VALID_BY_TRAVEL_DATE', 'A vacinação foi informada, mas o CIVP só passa a ter validade internacional 10 dias depois da dose. Pela data fornecida, ele ainda não estará válido na data da viagem.', 'REVIEW_TRAVEL_TIMING_AND_ENTRY_RULE'),
       validFrom: validity.toISOString().slice(0, 10)
     };
   }
