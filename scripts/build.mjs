@@ -15,6 +15,7 @@ const required = [
   'src/intelligence-http.mjs',
   'src/travel-data-broker.mjs',
   'src/travel-data-http.mjs',
+  'src/arrival-intelligence.mjs',
   'src/journey-command-center.mjs',
   'src/journey-readiness.mjs',
   'src/crewcheck-http-integration.mjs',
