@@ -41,10 +41,10 @@ export async function buildArrivalIntelligence(input = {}, options = {}) {
     baggage: input.baggage || {},
     evidence: input.evidence || input.baggageEvidence || {},
     carousel: carouselValue ? {
-      value: carouselValue,
+      carousel: carouselValue,
+      terminal: arrivalTerminal,
       provider: selectedFlight?.provider || flightStatus?.provider || 'CIRIUM',
-      observedAt,
-      source: flightStatus?.broker?.route || 'SHARED_CREWCHECK_SERVICE'
+      observedAt
     } : {},
     previousCarousel: input.previousCarousel || null
   });
@@ -102,10 +102,11 @@ function buildArrivalFlow({ input, arrivalGate, arrivalTerminal, baggageDecision
   }
 
   if (['COLLECT_REQUIRED', 'COLLECT_FOR_CUSTOMS_RECHECK'].includes(baggageDecision.decision)) {
+    const carousel = baggageDecision.carousel?.name || null;
     steps.push({
       kind: 'BAGGAGE_CLAIM',
-      status: baggageDecision.carousel?.value ? 'KNOWN' : 'NEEDS_CAROUSEL',
-      label: baggageDecision.carousel?.value ? `Retire a bagagem · Esteira ${baggageDecision.carousel.value}` : 'Retire a bagagem · esteira a confirmar',
+      status: carousel ? 'KNOWN' : 'NEEDS_CAROUSEL',
+      label: carousel ? `Retire a bagagem · Esteira ${carousel}` : 'Retire a bagagem · esteira a confirmar',
       indoorTargetType: 'BAGGAGE_CLAIM'
     });
   } else if (baggageDecision.decision === 'THROUGH_CHECKED_DO_NOT_COLLECT') {
