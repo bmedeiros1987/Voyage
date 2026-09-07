@@ -13,6 +13,8 @@ const required = [
   'src/token-crypto.mjs',
   'src/reservation-matcher.mjs',
   'src/intelligence-http.mjs',
+  'src/travel-data-broker.mjs',
+  'src/travel-data-http.mjs',
   'src/journey-command-center.mjs',
   'src/journey-readiness.mjs',
   'src/crewcheck-http-integration.mjs',
