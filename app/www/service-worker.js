@@ -1,4 +1,4 @@
-const CACHE = 'voyage-shell-v7-responsive';
+const CACHE = 'voyage-shell-v8-runtime-hardening';
 const SHARED_PDF_CACHE = 'voyage-shared-pdf-v1';
 const CORE = [
   './',
@@ -31,14 +31,22 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  if (event.request.method === 'POST' && url.pathname.endsWith('/share-pdf')) {
+  if (event.request.method === 'POST' && url.origin === self.location.origin && url.pathname.endsWith('/share-pdf')) {
     event.respondWith(handlePdfShareTarget(event.request));
     return;
   }
   if (event.request.method !== 'GET') return;
-  event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request).catch(() => caches.match('./index.html')))
-  );
+
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => response)
+        .catch(() => caches.match('./index.html'))
+    );
+    return;
+  }
+
+  event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
 });
 
 async function handlePdfShareTarget(request) {
