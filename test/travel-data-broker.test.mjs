@@ -11,6 +11,8 @@ test('broker declares CrewCheck shared service precedence', () => {
   assert.equal(caps.strategy, 'CREWCHECK_SHARED_FIRST_THEN_VOYAGE_NATIVE');
   assert.ok(caps.capabilities.includes('CURRENCY'));
   assert.ok(caps.capabilities.includes('BRAZIL_CEP'));
+  assert.ok(caps.capabilities.includes('FLIGHT_STATUS'));
+  assert.ok(caps.capabilities.includes('BAGGAGE_CAROUSEL'));
 });
 
 test('broker prefers CrewCheck shared FX service and sends only service token', async () => {
@@ -73,4 +75,52 @@ test('broker uses CrewCheck shared CEP service and normalizes path input', async
   assert.equal(result.ok, true);
   assert.equal(result.broker.route, 'SHARED_CREWCHECK_SERVICE');
   assert.match(calls[0].url, /\/api\/shared\/v1\/cep\/01001000$/);
+});
+
+test('broker reuses CrewCheck Cirium flight status including gate terminal and baggage carousel', async () => {
+  const calls = [];
+  const broker = createTravelDataBroker({
+    sharedBaseUrl: 'https://crewcheck.example',
+    sharedToken: 'service-secret',
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url: String(url), options });
+      return response({
+        ok: true,
+        provider: 'cirium-sky',
+        status: 'LIVE',
+        flights: [{
+          carrier: 'LA',
+          flightNumber: '3000',
+          resources: { departureGate: '22', arrivalGate: '205', arrivalTerminal: '2', baggage: '7A' },
+          freshness: { updatedAt: '2026-09-20T12:55:00.000Z', ageMinutes: 2 }
+        }],
+        secretsExposed: false
+      });
+    }
+  });
+  const result = await broker.latestFlightStatus({ carrier: 'LA', flight: 'LA3000', date: '2026-09-20' });
+  assert.equal(result.ok, true);
+  assert.equal(result.broker.route, 'SHARED_CREWCHECK_SERVICE');
+  assert.equal(result.flights[0].resources.baggage, '7A');
+  assert.equal(result.flights[0].resources.arrivalGate, '205');
+  assert.match(calls[0].url, /\/api\/shared\/v1\/flight\/status\?/);
+  assert.match(calls[0].url, /carrier=LA/);
+  assert.match(calls[0].url, /flight=3000/);
+  assert.match(calls[0].url, /date=2026-09-20/);
+  assert.equal(calls[0].options.headers['x-crewcheck-service-token'], 'service-secret');
+  assert.doesNotMatch(calls[0].url, /service-secret|token=/i);
+});
+
+test('broker fails closed for flight status instead of duplicating Cirium when shared service is unavailable', async () => {
+  const broker = createTravelDataBroker({
+    sharedBaseUrl: 'https://crewcheck.example',
+    sharedToken: 'service-secret',
+    awesomeApiKey: 'provider-secret',
+    fetchImpl: async () => response({ ok: false }, 503)
+  });
+  const result = await broker.latestFlightStatus({ carrier: 'LA', flight: '3000', date: '2026-09-20' });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'SHARED_FLIGHT_STATUS_UNAVAILABLE');
+  assert.equal(result.broker.route, 'NEEDS_SHARED_CREWCHECK_SERVICE');
+  assert.deepEqual(result.providerNeeds, ['CREWCHECK_SHARED_FLIGHT_STATUS']);
 });
