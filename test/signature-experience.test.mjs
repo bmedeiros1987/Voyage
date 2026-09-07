@@ -83,3 +83,16 @@ test('service worker caches the current Signature shell resources', async () => 
     assert.ok(sw.includes(`'./${resource}'`), resource);
   }
 });
+
+test('PWA shared PDFs use unique keys and bounded retention instead of a permanent singleton cache entry', async () => {
+  const sw = await text('app/www/service-worker.js');
+  const bridge = await text('app/www/native-pdf-share.js');
+  assert.match(sw, /SHARED_PDF_TTL_MS\s*=\s*30\s*\*\s*60\s*\*\s*1000/);
+  assert.match(sw, /makeShareId\(\)/);
+  assert.match(sw, /x-voyage-shared-at/);
+  assert.match(sw, /purgeExpiredSharedPdfs/);
+  assert.doesNotMatch(sw, /cache\.put\('\/__voyage_shared_pdf__'/);
+  assert.match(bridge, /getSharedPdfById/);
+  assert.match(bridge, /getNewestSharedPdf/);
+  assert.match(bridge, /purgeExpiredSharedPdfs/);
+});
