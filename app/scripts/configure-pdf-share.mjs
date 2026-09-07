@@ -1,120 +1,141 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const root = process.cwd();
+const packageDir = path.join(root, 'android/app/src/main/java/com/crewcheck/voyage');
 const manifestPath = path.join(root, 'android/app/src/main/AndroidManifest.xml');
-const mainActivityPath = path.join(root, 'android/app/src/main/java/com/crewcheck/voyage/MainActivity.kt');
-const pluginPath = path.join(root, 'android/app/src/main/java/com/crewcheck/voyage/VoyagePdfSharePlugin.kt');
+const mainJavaPath = path.join(packageDir, 'MainActivity.java');
+const mainKotlinPath = path.join(packageDir, 'MainActivity.kt');
+const pluginJavaPath = path.join(packageDir, 'VoyagePdfSharePlugin.java');
 
 let manifest = await readFile(manifestPath, 'utf8');
 if (!manifest.includes('android.intent.action.SEND')) {
   manifest = manifest.replace(
     /(<activity[\s\S]*?android:name="\.MainActivity"[\s\S]*?>)/,
-    `$1\n            <intent-filter>\n                <action android:name="android.intent.action.SEND" />\n                <category android:name="android.intent.category.DEFAULT" />\n                <data android:mimeType="application/pdf" />\n            </intent-filter>\n            <intent-filter>\n                <action android:name="android.intent.action.VIEW" />\n                <category android:name="android.intent.category.DEFAULT" />\n                <category android:name="android.intent.category.BROWSABLE" />\n                <data android:mimeType="application/pdf" />\n            </intent-filter>`
+    `$1\n            <intent-filter>\n                <action android:name="android.intent.action.SEND" />\n                <category android:name="android.intent.category.DEFAULT" />\n                <data android:mimeType="application/pdf" />\n            </intent-filter>`
   );
   await writeFile(manifestPath, manifest);
 }
 
-await mkdir(path.dirname(pluginPath), { recursive: true });
-await writeFile(pluginPath, `package com.crewcheck.voyage
+// Do not register ACTION_VIEW: Voyage must not become a catch-all viewer for arbitrary PDFs.
+manifest = manifest.replace(/\s*<intent-filter>\s*<action android:name="android\.intent\.action\.VIEW" \/>[\s\S]*?<data android:mimeType="application\/pdf" \/>\s*<\/intent-filter>/g, '');
+await writeFile(manifestPath, manifest);
 
-import android.content.Intent
-import android.net.Uri
-import android.provider.OpenableColumns
-import android.util.Base64
-import com.getcapacitor.JSObject
-import com.getcapacitor.Plugin
-import com.getcapacitor.PluginCall
-import com.getcapacitor.PluginMethod
-import com.getcapacitor.annotation.CapacitorPlugin
+await mkdir(packageDir, { recursive: true });
+
+await writeFile(pluginJavaPath, `package com.crewcheck.voyage;
+
+import android.content.Intent;
+import android.net.Uri;
+import android.provider.OpenableColumns;
+import android.database.Cursor;
+import android.util.Base64;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 @CapacitorPlugin(name = "VoyagePdfShare")
-class VoyagePdfSharePlugin : Plugin() {
-    companion object {
-        private const val MAX_BYTES = 15 * 1024 * 1024
-    }
+public class VoyagePdfSharePlugin extends Plugin {
+    private static final int MAX_BYTES = 15 * 1024 * 1024;
 
     @PluginMethod
-    fun consumeSharedPdf(call: PluginCall) {
-        val intent = activity.intent
-        val uri = sharedUri(intent)
+    public void consumeSharedPdf(PluginCall call) {
+        Intent intent = getActivity().getIntent();
+        Uri uri = sharedUri(intent);
         if (uri == null) {
-            call.resolve(JSObject().put("available", false))
-            return
+            JSObject result = new JSObject();
+            result.put("available", false);
+            call.resolve(result);
+            return;
         }
 
-        try {
-            val resolver = activity.contentResolver
-            val bytes = resolver.openInputStream(uri)?.use { input ->
-                val output = java.io.ByteArrayOutputStream()
-                val buffer = ByteArray(8192)
-                var total = 0
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read <= 0) break
-                    total += read
-                    if (total > MAX_BYTES) throw IllegalArgumentException("pdf_too_large")
-                    output.write(buffer, 0, read)
-                }
-                output.toByteArray()
-            } ?: throw IllegalArgumentException("pdf_unreadable")
-
-            if (bytes.size < 5 || String(bytes.copyOfRange(0, 5), Charsets.US_ASCII) != "%PDF-") {
-                throw IllegalArgumentException("invalid_pdf_signature")
+        try (InputStream input = getActivity().getContentResolver().openInputStream(uri)) {
+            if (input == null) throw new IllegalArgumentException("pdf_unreadable");
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int total = 0;
+            int read;
+            while ((read = input.read(buffer)) > 0) {
+                total += read;
+                if (total > MAX_BYTES) throw new IllegalArgumentException("pdf_too_large");
+                output.write(buffer, 0, read);
+            }
+            byte[] bytes = output.toByteArray();
+            if (bytes.length < 5 || !new String(bytes, 0, 5, StandardCharsets.US_ASCII).equals("%PDF-")) {
+                throw new IllegalArgumentException("invalid_pdf_signature");
             }
 
-            val result = JSObject()
-            result.put("available", true)
-            result.put("name", displayName(uri) ?: "documento.pdf")
-            result.put("mimeType", "application/pdf")
-            result.put("size", bytes.size)
-            result.put("base64", Base64.encodeToString(bytes, Base64.NO_WRAP))
-            call.resolve(result)
+            JSObject result = new JSObject();
+            result.put("available", true);
+            result.put("name", displayName(uri));
+            result.put("mimeType", "application/pdf");
+            result.put("size", bytes.length);
+            result.put("base64", Base64.encodeToString(bytes, Base64.NO_WRAP));
+            call.resolve(result);
 
             // Consume once. Subsequent foreground checks must not re-import the same share intent.
-            activity.intent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
-        } catch (error: Exception) {
-            call.reject(error.message ?: "pdf_share_failed")
+            Intent consumed = new Intent(Intent.ACTION_MAIN);
+            consumed.addCategory(Intent.CATEGORY_LAUNCHER);
+            getActivity().setIntent(consumed);
+        } catch (Exception error) {
+            call.reject(error.getMessage() != null ? error.getMessage() : "pdf_share_failed");
         }
     }
 
-    private fun sharedUri(intent: Intent?): Uri? {
-        if (intent == null) return null
-        return when (intent.action) {
-            Intent.ACTION_SEND -> intent.getParcelableExtra(Intent.EXTRA_STREAM)
-            Intent.ACTION_VIEW -> intent.data
-            else -> null
-        }
+    @SuppressWarnings("deprecation")
+    private Uri sharedUri(Intent intent) {
+        if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) return null;
+        Object value = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+        return value instanceof Uri ? (Uri) value : null;
     }
 
-    private fun displayName(uri: Uri): String? {
-        activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) return cursor.getString(0)
-        }
-        return uri.lastPathSegment
+    private String displayName(Uri uri) {
+        try (Cursor cursor = getActivity().getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                String name = cursor.getString(0);
+                if (name != null && !name.isBlank()) return name;
+            }
+        } catch (Exception ignored) {}
+        String fallback = uri.getLastPathSegment();
+        return fallback == null || fallback.isBlank() ? "documento.pdf" : fallback;
     }
 }
 `);
 
-let mainActivity = await readFile(mainActivityPath, 'utf8');
-mainActivity = `package com.crewcheck.voyage
+const mainJava = `package com.crewcheck.voyage;
 
-import android.content.Intent
-import android.os.Bundle
-import com.getcapacitor.BridgeActivity
+import android.content.Intent;
+import android.os.Bundle;
+import com.getcapacitor.BridgeActivity;
 
-class MainActivity : BridgeActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        registerPlugin(VoyagePdfSharePlugin::class.java)
-        super.onCreate(savedInstanceState)
+public class MainActivity extends BridgeActivity {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(VoyagePdfSharePlugin.class);
+        super.onCreate(savedInstanceState);
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
     }
 }
 `;
-await writeFile(mainActivityPath, mainActivity);
 
-console.log('Voyage Android PDF share target configured.');
+let hasJava = false;
+let hasKotlin = false;
+try { await access(mainJavaPath); hasJava = true; } catch {}
+try { await access(mainKotlinPath); hasKotlin = true; } catch {}
+
+if (hasKotlin && !hasJava) {
+  throw new Error('Voyage PDF share expects the Capacitor Java template; MainActivity.kt was found without MainActivity.java. Convert the generated activity to Java or add Kotlin to Gradle explicitly.');
+}
+
+await writeFile(mainJavaPath, mainJava);
+console.log('Voyage Android PDF SEND share target configured using Java.');
