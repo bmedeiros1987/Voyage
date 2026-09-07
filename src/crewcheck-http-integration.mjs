@@ -1,14 +1,22 @@
 import { timingSafeEqual } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { buildCrewCheckBridgePreview, crewCheckIntegrationCapabilities } from './crewcheck-integration.mjs';
 import { handleIntelligenceHttp } from './intelligence-http.mjs';
 
 const MAX_BODY_BYTES = 256 * 1024;
 const FORBIDDEN_KEY = /(password|passcode|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|cpf|card[_-]?(number|cvv|cvc)|pnr|private[_-]?address)/i;
+const AUXILIARY_ASSETS = new Map([
+  ['premium-layout.css', 'text/css; charset=utf-8'],
+  ['premium-overrides.css', 'text/css; charset=utf-8'],
+  ['signature-experience.css', 'text/css; charset=utf-8'],
+  ['signature-experience.js', 'text/javascript; charset=utf-8']
+]);
 
 export async function handleCrewCheckIntegrationHttp(req, res, path) {
   // This handler is mounted by the main server before legacy routes. The intelligence
-  // router is delegated here so new Voyage capabilities can be added without
-  // repeatedly rewriting the monolithic server route table.
+  // router and lightweight premium assets are delegated here so new Voyage surfaces
+  // can evolve without repeatedly rewriting the monolithic server route table.
+  if (req.method === 'GET' && await serveAuxiliaryAsset(res, path)) return true;
   if (await handleIntelligenceHttp(req, res, path)) return true;
 
   if (req.method === 'GET' && path === '/api/v1/integrations/crewcheck/capabilities') {
@@ -44,6 +52,23 @@ export async function handleCrewCheckIntegrationHttp(req, res, path) {
   }
 
   return false;
+}
+
+async function serveAuxiliaryAsset(res, path) {
+  const normalized = String(path || '').replace(/^\/voyage\/?/, '/').replace(/^\//, '');
+  const contentType = AUXILIARY_ASSETS.get(normalized);
+  if (!contentType) return false;
+  try {
+    const data = await readFile(new URL(`../app/www/${normalized}`, import.meta.url));
+    res.statusCode = 200;
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Length', data.length);
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.end(data);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function sharedSecretConfigured() {
