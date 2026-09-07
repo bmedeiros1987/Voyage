@@ -30,10 +30,16 @@ jobs:
         run: npm install
       - name: Generate Android project
         run: npx cap add android
+      - name: Configure direct PDF share target
+        run: npm run android:pdf-share
       - name: Generate Voyage icon and splash assets
         run: npm run android:assets
       - name: Synchronize web assets
         run: npx cap sync android
+      - name: Verify PDF share target survived sync
+        run: |
+          grep -q 'android.intent.action.SEND' android/app/src/main/AndroidManifest.xml
+          grep -q 'VoyagePdfSharePlugin' android/app/src/main/java/com/crewcheck/voyage/MainActivity.kt
       - name: Build debug APK
         run: |
           chmod +x android/gradlew
