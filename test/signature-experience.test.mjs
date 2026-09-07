@@ -38,6 +38,8 @@ test('Signature UI is premium, service-backed and does not invent trip readiness
   assert.match(js, /PRIVATE TRAVEL INTELLIGENCE/);
   assert.match(js, /\/api\/v1\/intelligence\/capabilities/);
   assert.match(js, /\/api\/v1\/integrations\/crewcheck\/capabilities/);
+  assert.match(js, /\/api\/v1\/data\/capabilities/);
+  assert.match(js, /Cirium via CrewCheck/);
   assert.match(js, /Prontidão tecnológica/);
   assert.match(js, /A prontidão da sua viagem é calculada separadamente/);
   assert.doesNotMatch(js, /Journey Readiness[^\n]*92%/);
