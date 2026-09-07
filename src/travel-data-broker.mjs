@@ -4,15 +4,16 @@ const DEFAULT_TIMEOUT_MS = 6000;
 
 export function travelDataBrokerCapabilities() {
   return {
-    version: '1.0',
+    version: '1.1',
     strategy: 'CREWCHECK_SHARED_FIRST_THEN_VOYAGE_NATIVE',
-    capabilities: ['CURRENCY', 'BRAZIL_CEP'],
+    capabilities: ['CURRENCY', 'BRAZIL_CEP', 'FLIGHT_STATUS', 'GATE', 'TERMINAL', 'BAGGAGE_CAROUSEL'],
     principles: [
       'Prefer the existing versioned CrewCheck shared service when configured and healthy.',
-      'Fall back to Voyage-native AwesomeAPI only when the shared service is unavailable or not configured.',
+      'Fall back to Voyage-native providers only when an approved native integration exists; do not duplicate Cirium credentials just to create a fallback.',
       'Never expose provider API keys or shared-service tokens to browser code.',
       'Preserve upstream provider provenance and add broker route provenance.',
-      'Do not silently treat stale provider data as live.'
+      'Do not silently treat stale provider data as live.',
+      'Baggage carousel is operational data and does not by itself determine whether checked baggage must be collected.'
     ]
   };
 }
@@ -44,13 +45,39 @@ export function createTravelDataBroker(options = {}) {
     return attachBroker(native, 'VOYAGE_NATIVE_AWESOMEAPI');
   }
 
+  async function latestFlightStatus(input = {}, requestOptions = {}) {
+    const query = normalizeFlightQuery(input);
+    if (!query) {
+      return attachBroker({ ok: false, code: 'INVALID_FLIGHT_QUERY', flights: [] }, 'NO_PROVIDER_CALL');
+    }
+    const shared = await tryShared('FLIGHT_STATUS', query, requestOptions);
+    if (shared) return shared;
+    return attachBroker({
+      ok: false,
+      code: 'SHARED_FLIGHT_STATUS_UNAVAILABLE',
+      status: 'NEEDS_SHARED_SERVICE',
+      query,
+      flights: [],
+      providerNeeds: ['CREWCHECK_SHARED_FLIGHT_STATUS'],
+      secretsExposed: false
+    }, 'NEEDS_SHARED_CREWCHECK_SERVICE');
+  }
+
+  async function sharedFlightStatusCapabilities(requestOptions = {}) {
+    const shared = await tryShared('FLIGHT_CAPABILITIES', {}, requestOptions);
+    return shared || attachBroker({
+      ok: false,
+      configured: false,
+      capability: 'FLIGHT_STATUS',
+      code: 'SHARED_FLIGHT_STATUS_CAPABILITIES_UNAVAILABLE',
+      secretsExposed: false
+    }, 'NEEDS_SHARED_CREWCHECK_SERVICE');
+  }
+
   async function tryShared(kind, args, requestOptions) {
     if (!sharedBaseUrl || !sharedToken || requestOptions?.skipShared === true) return null;
-    const path = kind === 'FX'
-      ? `/api/shared/v1/fx/latest?pairs=${encodeURIComponent(normalizePairQuery(args.pairs))}`
-      : `/api/shared/v1/cep/${encodeURIComponent(normalizeCep(args.cep) || '')}`;
-    if (kind === 'FX' && !normalizePairQuery(args.pairs)) return null;
-    if (kind === 'CEP' && !normalizeCep(args.cep)) return null;
+    const path = sharedPath(kind, args);
+    if (!path) return null;
 
     try {
       const payload = await fetchJson(`${sharedBaseUrl}${path}`, {
@@ -68,10 +95,31 @@ export function createTravelDataBroker(options = {}) {
   return Object.freeze({
     latestFx,
     lookupCep,
+    latestFlightStatus,
+    sharedFlightStatusCapabilities,
     sharedConfigured: Boolean(sharedBaseUrl && sharedToken),
     nativeConfigured: awesomeClient.configured,
     capabilities: travelDataBrokerCapabilities
   });
+}
+
+function sharedPath(kind, args) {
+  if (kind === 'FX') {
+    const pairs = normalizePairQuery(args.pairs);
+    return pairs ? `/api/shared/v1/fx/latest?pairs=${encodeURIComponent(pairs)}` : null;
+  }
+  if (kind === 'CEP') {
+    const cep = normalizeCep(args.cep);
+    return cep ? `/api/shared/v1/cep/${encodeURIComponent(cep)}` : null;
+  }
+  if (kind === 'FLIGHT_CAPABILITIES') return '/api/shared/v1/flight/status/capabilities';
+  if (kind === 'FLIGHT_STATUS') {
+    const query = normalizeFlightQuery(args);
+    if (!query) return null;
+    const params = new URLSearchParams({ carrier: query.carrier, flight: query.flight, date: query.date });
+    return `/api/shared/v1/flight/status?${params.toString()}`;
+  }
+  return null;
 }
 
 function attachBroker(result, route) {
@@ -117,6 +165,18 @@ function normalizePairQuery(input) {
 function normalizeCep(value) {
   const digits = String(value || '').replace(/\D/g, '');
   return /^\d{8}$/.test(digits) ? digits : null;
+}
+
+function normalizeFlightQuery(input = {}) {
+  const carrier = String(input.carrier || input.airline || '').trim().toUpperCase();
+  const flight = String(input.flight || input.flightNumber || '').trim().toUpperCase().replace(new RegExp(`^${carrier}`), '');
+  const date = String(input.date || input.departureDate || '').trim();
+  if (!/^[A-Z0-9]{2,3}$/.test(carrier)) return null;
+  if (!/^[0-9]{1,4}[A-Z]?$/.test(flight)) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const parsed = new Date(`${date}T12:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) return null;
+  return { carrier, flight, date };
 }
 
 function cleanBaseUrl(value) {
