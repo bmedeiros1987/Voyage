@@ -8,7 +8,7 @@ const MAX_PDF_BYTES = 15 * 1024 * 1024;
 const MAX_SCAN_BYTES = 8 * 1024 * 1024;
 const MAX_INFLATED_STREAM_BYTES = 4 * 1024 * 1024;
 const UNKNOWN_OPERATIONAL_CONTEXT = /(?:to\s+be\s+announced|to\s+be\s+confirmed|tba|tbd|a\s+confirmar|a\s+ser\s+informad[oa]|ser[aá]\s+informad[oa]|informado\s+no\s+aeroporto|ainda\s+n[aã]o\s+informad[oa]|consulte\s+(?:o\s+)?painel|check\s+(?:the\s+)?display)/i;
-const OPERATIONAL_VALUE_FORMAT = /^(?:T?\d{1,2}[A-Z]?|[A-Z]\d{0,3}|[A-Z])$/;
+const OPERATIONAL_VALUE_FORMAT = /^(?:T?\d{1,3}[A-Z]?|[A-Z]\d{0,3}|[A-Z])$/;
 
 export function ingestPdfBuffer(buffer, options = {}) {
   if (!Buffer.isBuffer(buffer)) throw new Error('pdf_buffer_required');
@@ -50,10 +50,10 @@ export function ingestPdfBuffer(buffer, options = {}) {
   const resolvedCategory = classification.category === 'BOARDING_PASS'
     ? 'BOARDING_PASS'
     : providerParsing.category || classification.category;
-  const scanTruncated = extracted.warnings?.includes('PDF_SCAN_TRUNCATED_FOR_SAFETY') === true;
   const factWarnings = Object.entries(generic.factConfidence)
     .filter(([, value]) => value < 0.55)
     .map(([key]) => `LOW_CONFIDENCE_FACT_${key.toUpperCase()}`);
+  const scanTruncated = extracted.warnings?.includes('PDF_SCAN_TRUNCATED_FOR_SAFETY') === true;
   const needsReview = encrypted
     || mergedText.trim().length < 20
     || effectiveConfidence < 0.55
