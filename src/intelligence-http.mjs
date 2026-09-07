@@ -5,6 +5,7 @@ import { transportIntelligenceCapabilities, buildTransportChoice } from './trans
 import { departureIntelligenceCapabilities, buildDepartureDecision } from './departure-intelligence.mjs';
 import { weatherPlanningCapabilities, evaluateActivityWeather, buildWeatherReplacementPlan } from './weather-intelligence.mjs';
 import { travelHealthIntelligenceCapabilities, buildTravelHealthPlan } from './travel-health-intelligence.mjs';
+import { civpGuidanceCapabilities, buildBrazilCivpGuide } from './civp-guidance.mjs';
 import { airportConnectionCapabilities, buildAirportConnectionPlan, knownAirportConnectionFacts } from './airport-connection-intelligence.mjs';
 import { baggageIntelligenceCapabilities, buildBaggageConnectionDecision } from './baggage-intelligence.mjs';
 import { baggagePassportCapabilities, analyzeBaggagePassport } from './baggage-passport-intelligence.mjs';
@@ -24,6 +25,7 @@ const GET_ROUTES = new Map([
   ['/api/v1/departure/capabilities', departureIntelligenceCapabilities],
   ['/api/v1/weather/capabilities', weatherPlanningCapabilities],
   ['/api/v1/travel-health/capabilities', travelHealthIntelligenceCapabilities],
+  ['/api/v1/travel-health/civp/br/capabilities', civpGuidanceCapabilities],
   ['/api/v1/airport-connections/capabilities', airportConnectionCapabilities],
   ['/api/v1/baggage/capabilities', baggageIntelligenceCapabilities],
   ['/api/v1/baggage/passport/capabilities', baggagePassportCapabilities],
@@ -43,6 +45,7 @@ const POST_ROUTES = new Map([
   ['/api/v1/transport/choice', buildTransportChoice],
   ['/api/v1/departure/decision', buildDepartureDecision],
   ['/api/v1/travel-health/plan', buildTravelHealthPlan],
+  ['/api/v1/travel-health/civp/br/guide', buildBrazilCivpGuide],
   ['/api/v1/airport-connections/plan', buildAirportConnectionPlan],
   ['/api/v1/baggage/connection', buildBaggageConnectionDecision],
   ['/api/v1/baggage/passport/analyze', analyzeBaggagePassport],
@@ -56,7 +59,7 @@ const POST_ROUTES = new Map([
 
 export function intelligenceHttpCapabilities() {
   return {
-    version: '1.3',
+    version: '1.4',
     getRoutes: [...GET_ROUTES.keys()],
     postRoutes: [...POST_ROUTES.keys(), '/api/v1/weather/activity-check', '/api/v1/weather/replacement-plan'],
     policy: {
