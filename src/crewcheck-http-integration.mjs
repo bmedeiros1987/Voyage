@@ -10,8 +10,10 @@ const AUXILIARY_ASSETS = new Map([
   ['premium-layout.css', 'text/css; charset=utf-8'],
   ['premium-overrides.css', 'text/css; charset=utf-8'],
   ['signature-experience.css', 'text/css; charset=utf-8'],
+  ['adaptive-home.css', 'text/css; charset=utf-8'],
   ['responsive-hardening.css', 'text/css; charset=utf-8'],
   ['signature-experience.js', 'text/javascript; charset=utf-8'],
+  ['adaptive-home.js', 'text/javascript; charset=utf-8'],
   ['native-pdf-share.js', 'text/javascript; charset=utf-8']
 ]);
 

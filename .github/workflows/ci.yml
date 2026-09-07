@@ -36,12 +36,15 @@ jobs:
           test -f app/www/themes.css
           test -f app/www/imports.css
           test -f app/www/app.js
+          test -f app/www/adaptive-home.js
+          test -f app/www/adaptive-home.css
           test -f app/www/import-enhancements.js
           test -f app/www/service-worker.js
           test -f app/capacitor.config.json
       - name: Syntax-check mobile shell
         run: |
           node --check app/www/app.js
+          node --check app/www/adaptive-home.js
           node --check app/www/import-enhancements.js
           node --check app/www/service-worker.js
       - name: Verify offline importer assets are cached

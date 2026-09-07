@@ -54,6 +54,8 @@ test('premium and responsive assets are served by the early Voyage router at roo
     '/premium-layout.css',
     '/voyage/premium-overrides.css',
     '/signature-experience.js',
+    '/adaptive-home.css',
+    '/voyage/adaptive-home.js',
     '/voyage/signature-experience.css',
     '/responsive-hardening.css',
     '/voyage/native-pdf-share.js'

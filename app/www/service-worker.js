@@ -1,4 +1,4 @@
-const CACHE = 'voyage-shell-v10-api-origin';
+const CACHE = 'voyage-shell-v11-api-origin-adaptive-home';
 const SHARED_PDF_CACHE = 'voyage-shared-pdf-v1';
 const SHARED_PDF_PREFIX = '/__voyage_shared_pdf__/';
 const SHARED_PDF_TTL_MS = 30 * 60 * 1000;
@@ -10,10 +10,12 @@ const CORE = [
   './premium-layout.css',
   './premium-overrides.css',
   './signature-experience.css',
+  './adaptive-home.css',
   './responsive-hardening.css',
   './imports.css',
   './api-origin.js',
   './signature-experience.js',
+  './adaptive-home.js',
   './app.js',
   './import-enhancements.js',
   './native-pdf-share.js',

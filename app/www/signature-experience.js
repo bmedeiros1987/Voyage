@@ -5,13 +5,18 @@ const SIGNATURE_VERSION = '1.1';
 document.documentElement.dataset.voyageSignature = '1';
 injectSignatureHome();
 injectSignatureCommandCenter();
+setSignatureLoadingState();
 queueMicrotask(() => refreshSignatureStatus().catch(() => {}));
 
 document.addEventListener('click', (event) => {
   const refresh = event.target.closest('[data-signature-refresh]');
   if (refresh) {
     refresh.classList.add('is-spinning');
-    refreshSignatureStatus().finally(() => refresh.classList.remove('is-spinning'));
+    refresh.setAttribute('aria-busy', 'true');
+    refreshSignatureStatus().finally(() => {
+      refresh.classList.remove('is-spinning');
+      refresh.removeAttribute('aria-busy');
+    });
   }
 });
 
@@ -19,17 +24,6 @@ function injectSignatureHome() {
   const journeys = document.querySelector('[data-screen="journeys"]');
   if (!journeys || journeys.querySelector('[data-signature-command]')) return;
   const segmented = journeys.querySelector('.segmented-control');
-  const topbarActions = journeys.querySelector('.topbar-actions');
-
-  if (topbarActions && !topbarActions.querySelector('[data-nav="command"]')) {
-    const commandButton = document.createElement('button');
-    commandButton.className = 'icon-button';
-    commandButton.dataset.nav = 'command';
-    commandButton.setAttribute('aria-label', 'Abrir Voyage Command Center');
-    commandButton.title = 'Command Center';
-    commandButton.textContent = '✦';
-    topbarActions.prepend(commandButton);
-  }
 
   const block = document.createElement('div');
   block.innerHTML = `
@@ -47,12 +41,6 @@ function injectSignatureHome() {
       <button class="signature-command__action" data-nav="command">
         <span>✦</span><span><strong>Abrir Command Center</strong><small>Integrações, prontidão e próximas ações em um só lugar</small></span><span>›</span>
       </button>
-    </section>
-    <section class="signature-quick-grid" aria-label="Ações rápidas Voyage Signature">
-      <button class="signature-quick signature-quick--hero" data-action="imports"><span class="signature-quick__icon">⇧</span><span><strong>Importar tudo</strong><small>Reservas, PDFs e documentos</small></span></button>
-      <button class="signature-quick" data-nav="command"><span class="signature-quick__icon">✦</span><span><strong>Inteligência</strong><small>Command Center da jornada</small></span></button>
-      <button class="signature-quick" data-nav="live"><span class="signature-quick__icon">⌾</span><span><strong>Guardian</strong><small>Operação da viagem em tempo real</small></span></button>
-      <button class="signature-quick" data-nav="security"><span class="signature-quick__icon">♢</span><span><strong>Assistência</strong><small>Segurança e suporte rápido</small></span></button>
     </section>`;
 
   const nodes = [...block.children];
@@ -139,6 +127,7 @@ async function refreshSignatureStatus() {
   const dataBroker = valueOf(responses[3]);
   const gmail = valueOf(responses[4]);
   const importer = valueOf(responses[5]);
+  const backendReachable = responses.some((result) => result.status === 'fulfilled');
 
   const sharedFlight = Boolean(dataBroker?.sharedFlightStatus?.ok && dataBroker?.sharedFlightStatus?.configured !== false);
   const sharedData = Boolean(dataBroker?.sharedCrewCheckConfigured);
@@ -152,7 +141,8 @@ async function refreshSignatureStatus() {
     gmail: Boolean(gmail?.enabled),
     importer: Boolean(importer),
     offline: 'serviceWorker' in navigator,
-    data: Boolean(dataBroker?.ok)
+    data: Boolean(dataBroker?.ok),
+    backendReachable
   };
 
   updateChip('platform', states.core, 'Voyage Core');
@@ -171,7 +161,7 @@ async function refreshSignatureStatus() {
   if (ring) ring.style.setProperty('--score', String(score));
   setText('[data-signature-score]', `${score}%`);
   setText('[data-signature-readiness-label]', score === 100 ? 'Base tecnológica pronta para a experiência Signature.' : `${weighted}/4 camadas essenciais disponíveis neste ambiente.`);
-  setText('[data-signature-platform-label]', states.core ? 'Sistema ativo' : 'Modo degradado');
+  setText('[data-signature-platform-label]', states.core ? 'Sistema ativo' : states.backendReachable ? 'Modo degradado' : 'Indisponível');
 
   document.querySelectorAll('[data-capability-state]').forEach((element) => {
     const kind = element.dataset.capabilityState;
@@ -198,6 +188,13 @@ async function refreshSignatureStatus() {
 function renderStream({ intelligence, crewcheck, dataBroker, gmail, importer, states }) {
   const container = document.querySelector('[data-signature-stream]');
   if (!container) return;
+  if (!states.backendReachable) {
+    const detail = navigator.onLine
+      ? 'O servidor não respondeu. Use Atualizar para tentar novamente; nenhuma prontidão foi presumida.'
+      : 'Você está offline. O shell continua disponível, mas dados do servidor não podem ser confirmados.';
+    container.innerHTML = `<article class="signature-stream__empty"><time>—</time><i></i><div><strong>Backend indisponível</strong><small>${escapeHtml(detail)}</small></div></article>`;
+    return;
+  }
   const stamp = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(new Date());
   const rows = [
     states.core && ['Core Voyage', 'API e shell respondendo normalmente.'],
@@ -244,12 +241,20 @@ function setText(selector, value) {
   if (element) element.textContent = value;
 }
 
+function setSignatureLoadingState() {
+  document.querySelectorAll('[data-signature-refresh]').forEach((button) => {
+    button.setAttribute('aria-label', 'Atualizar diagnóstico do Command Center');
+  });
+}
+
 function valueOf(result) {
   return result?.status === 'fulfilled' ? result.value : null;
 }
 
 async function apiJson(path) {
-  const response = await fetchApi(path, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  const response = await fetchApi(path, { headers: { Accept: 'application/json' }, cache: 'no-store', signal: controller.signal }).finally(() => clearTimeout(timer));
   if (!response.ok) throw new Error(`signature_api_${response.status}`);
   return response.json();
 }

@@ -57,14 +57,14 @@ function showScreen(name, remember = true) {
     document.dispatchEvent(new CustomEvent('voyage:imports-open'));
     refreshGmailStatus();
   }
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  window.scrollTo({ top: 0, behavior: 'auto' });
 }
 
 document.addEventListener('click', (event) => {
   const actionEl = event.target.closest('[data-action]');
   const navEl = event.target.closest('[data-nav]');
 
-  if (navEl) {
+  if (navEl && !navEl.disabled && navEl.getAttribute('aria-disabled') !== 'true') {
     showScreen(navEl.dataset.nav);
     return;
   }
@@ -97,21 +97,13 @@ document.addEventListener('click', (event) => {
     }
 
     const passiveButton = event.target.closest('button');
-    if (passiveButton && !passiveButton.disabled) {
-      const safety = passiveButton.matches('.sos-button');
-      showShellNotice(safety
-        ? 'Assistência ainda não está configurada neste ambiente. O Voyage não simula uma chamada de emergência.'
-        : 'Este recurso ainda está sendo conectado à experiência Voyage.');
+    if (passiveButton && !passiveButton.disabled && passiveButton.getAttribute('aria-disabled') !== 'true') {
+      showShellNotice('Este recurso ainda está indisponível neste ambiente. O Voyage não simula uma integração.');
     }
     return;
   }
 
   switch (actionEl.dataset.action) {
-    case 'enter':
-    case 'google-login':
-    case 'create-account':
-      showScreen('journeys');
-      break;
     case 'cycle-theme':
       cycleTheme();
       break;
@@ -120,6 +112,9 @@ document.addEventListener('click', (event) => {
       break;
     case 'availability':
       showScreen('availability');
+      break;
+    case 'availability-search':
+      runAvailabilityPreview(actionEl);
       break;
     case 'imports':
       showScreen('imports');
@@ -132,7 +127,7 @@ document.addEventListener('click', (event) => {
       showScreen(previousScreen || 'journeys', false);
       break;
     default:
-      showShellNotice('Este recurso ainda está sendo conectado à experiência Voyage.');
+      showShellNotice('Este recurso ainda está indisponível neste ambiente.');
   }
 });
 
@@ -222,6 +217,49 @@ async function refreshGmailStatus() {
     detail.textContent = 'O Gmail será sincronizado quando a API estiver acessível';
     dot.classList.remove('gmail-dot--ready');
   }
+}
+
+async function runAvailabilityPreview(button) {
+  const result = document.querySelector('[data-availability-result]');
+  if (!result || button.disabled) return;
+  const selectedDays = document.querySelector('[data-day-picker] .selected')?.dataset.days || '4';
+  const activePriority = document.querySelector('.preference--active')?.dataset.priority || 'BALANCED';
+  button.disabled = true;
+  result.className = 'availability-result availability-result--loading';
+  result.textContent = 'Consultando o servidor de disponibilidade…';
+  try {
+    const response = await fetchWithTimeout((signal) => fetchApi('/api/v1/availability/preview', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userType: 'PASSENGER', desiredDays: Number(selectedDays), maxDays: Number(selectedDays), optimizationPriority: activePriority }),
+      signal
+    }), 8000);
+    if (!response.ok) throw new Error(`availability_${response.status}`);
+    const payload = await response.json();
+    result.className = 'availability-result availability-result--success';
+    result.textContent = `${payload.message || 'Preferência registrada.'} Nenhuma janela é confirmada sem dados de viagem e aprovação.`;
+  } catch (error) {
+    result.className = 'availability-result availability-result--error';
+    result.textContent = !navigator.onLine
+      ? 'Você está offline. A preferência não foi enviada; conecte-se para consultar a disponibilidade.'
+      : error?.name === 'TimeoutError'
+        ? 'A consulta demorou mais que o esperado. Tente novamente quando o servidor responder.'
+        : 'A disponibilidade não está acessível neste momento. Nenhuma alteração foi aplicada.';
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function fetchWithTimeout(requestFactory, timeoutMs) {
+  const controller = new AbortController();
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+    controller.abort(new DOMException('Request timed out', 'TimeoutError'));
+    reject(new DOMException('Request timed out', 'TimeoutError'));
+    }, timeoutMs);
+  });
+  return Promise.race([requestFactory(controller.signal), timeout]).finally(() => clearTimeout(timer));
 }
 
 function showShellNotice(message) {
