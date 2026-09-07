@@ -6,6 +6,7 @@
     "android:add": "cap add android",
     "android:sync": "cap sync android",
     "android:assets": "capacitor-assets generate --android",
+    "android:pdf-share": "node scripts/configure-pdf-share.mjs",
     "android:open": "cap open android"
   },
   "dependencies": {
