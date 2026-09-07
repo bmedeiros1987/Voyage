@@ -1,5 +1,7 @@
-const CACHE = 'voyage-shell-v8-runtime-hardening';
+const CACHE = 'voyage-shell-v9-share-retention';
 const SHARED_PDF_CACHE = 'voyage-shared-pdf-v1';
+const SHARED_PDF_PREFIX = '/__voyage_shared_pdf__/';
+const SHARED_PDF_TTL_MS = 30 * 60 * 1000;
 const CORE = [
   './',
   './index.html',
@@ -23,9 +25,11 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE && key !== SHARED_PDF_CACHE).map((key) => caches.delete(key))))
-  );
+  event.waitUntil((async () => {
+    await Promise.all((await caches.keys()).filter((key) => key !== CACHE && key !== SHARED_PDF_CACHE).map((key) => caches.delete(key)));
+    const shared = await caches.open(SHARED_PDF_CACHE);
+    await purgeExpiredSharedPdfs(shared);
+  })());
   self.clients.claim();
 });
 
@@ -62,14 +66,36 @@ async function handlePdfShareTarget(request) {
   }
 
   const cache = await caches.open(SHARED_PDF_CACHE);
-  await cache.put('/__voyage_shared_pdf__', new Response(file, {
+  await purgeExpiredSharedPdfs(cache);
+  const shareId = makeShareId();
+  const cacheKey = `${SHARED_PDF_PREFIX}${shareId}`;
+  await cache.put(cacheKey, new Response(file, {
     headers: {
       'content-type': 'application/pdf',
-      'x-voyage-filename': file.name || 'documento.pdf'
+      'x-voyage-filename': file.name || 'documento.pdf',
+      'x-voyage-shared-at': String(Date.now())
     }
   }));
 
   const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-  clients.forEach((client) => client.postMessage({ type: 'VOYAGE_PDF_SHARE_READY' }));
-  return Response.redirect('./?shared=pdf', 303);
+  clients.forEach((client) => client.postMessage({ type: 'VOYAGE_PDF_SHARE_READY', shareId }));
+  return Response.redirect(`./?shared=pdf&share=${encodeURIComponent(shareId)}`, 303);
+}
+
+async function purgeExpiredSharedPdfs(cache) {
+  const now = Date.now();
+  for (const request of await cache.keys()) {
+    const url = new URL(request.url);
+    if (!url.pathname.startsWith(SHARED_PDF_PREFIX)) continue;
+    const response = await cache.match(request);
+    const sharedAt = Number(response?.headers.get('x-voyage-shared-at') || 0);
+    if (!sharedAt || now - sharedAt > SHARED_PDF_TTL_MS) await cache.delete(request);
+  }
+}
+
+function makeShareId() {
+  if (self.crypto?.randomUUID) return self.crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  self.crypto.getRandomValues(bytes);
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
