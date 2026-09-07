@@ -1,17 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 
-const MARKUP_SOURCES = [
-  'app/www/index.html',
-  'app/www/app.js',
-  'app/www/import-enhancements.js',
-  'app/www/signature-experience.js',
-  'app/www/native-pdf-share.js'
-];
+/**
+ * Enumerated from disk on purpose: a hardcoded list silently stops covering the
+ * next client someone adds, and the CSP applies to all of them.
+ */
+async function clientSources() {
+  const entries = await readdir(new URL('../app/www/', import.meta.url));
+  return ['app/www/index.html', ...entries.filter((name) => name.endsWith('.js')).map((name) => `app/www/${name}`)];
+}
 
-test('the shell contains nothing the restrictive CSP would silently drop', async () => {
-  for (const path of MARKUP_SOURCES) {
+test('every client the shell ships carries nothing the restrictive CSP would silently drop', async () => {
+  const sources = await clientSources();
+  assert.ok(sources.length >= 6, 'the shell must ship the clients this suite expects to cover');
+  for (const path of sources) {
     const source = await read(path);
     assert.doesNotMatch(source, /\sstyle="/, `${path} must not carry a style attribute: style-src 'self' drops it and the layout degrades silently`);
     assert.doesNotMatch(source, /<style[\s>]/, `${path} must not inject a style element`);
