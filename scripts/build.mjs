@@ -30,10 +30,12 @@ const required = [
   'app/www/premium-layout.css',
   'app/www/premium-overrides.css',
   'app/www/signature-experience.css',
+  'app/www/responsive-hardening.css',
   'app/www/signature-experience.js',
   'app/www/imports.css',
   'app/www/app.js',
   'app/www/import-enhancements.js',
+  'app/www/native-pdf-share.js',
   'app/www/service-worker.js',
   'app/www/manifest.webmanifest'
 ];
