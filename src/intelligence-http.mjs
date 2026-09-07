@@ -7,6 +7,7 @@ import { weatherPlanningCapabilities, evaluateActivityWeather, buildWeatherRepla
 import { airportConnectionCapabilities, buildAirportConnectionPlan, knownAirportConnectionFacts } from './airport-connection-intelligence.mjs';
 import { baggageIntelligenceCapabilities, buildBaggageConnectionDecision } from './baggage-intelligence.mjs';
 import { airportIndoorNavigationCapabilities, buildAirportIndoorRoute } from './airport-indoor-navigation.mjs';
+import { arrivalIntelligenceCapabilities, buildArrivalIntelligence } from './arrival-intelligence.mjs';
 import { journeyReadinessCapabilities, buildJourneyReadiness } from './journey-readiness.mjs';
 import { journeyCommandCenterCapabilities, buildJourneyCommandCenter } from './journey-command-center.mjs';
 import { ecosystemServiceRouterCapabilities, buildEcosystemServiceCatalog, resolveEcosystemCapabilities } from './ecosystem-service-router.mjs';
@@ -23,6 +24,7 @@ const GET_ROUTES = new Map([
   ['/api/v1/airport-connections/capabilities', airportConnectionCapabilities],
   ['/api/v1/baggage/capabilities', baggageIntelligenceCapabilities],
   ['/api/v1/airports/indoor/capabilities', airportIndoorNavigationCapabilities],
+  ['/api/v1/journey/arrival/capabilities', arrivalIntelligenceCapabilities],
   ['/api/v1/journey/readiness/capabilities', journeyReadinessCapabilities],
   ['/api/v1/journey/command-center/capabilities', journeyCommandCenterCapabilities],
   ['/api/v1/ecosystem/capabilities', ecosystemServiceRouterCapabilities],
@@ -39,6 +41,7 @@ const POST_ROUTES = new Map([
   ['/api/v1/airport-connections/plan', buildAirportConnectionPlan],
   ['/api/v1/baggage/connection', buildBaggageConnectionDecision],
   ['/api/v1/airports/indoor/route', buildAirportIndoorRoute],
+  ['/api/v1/journey/arrival/preview', buildArrivalIntelligence],
   ['/api/v1/journey/readiness', buildJourneyReadiness],
   ['/api/v1/journey/command-center', buildJourneyCommandCenter],
   ['/api/v1/ecosystem/catalog', buildEcosystemServiceCatalog],
@@ -47,13 +50,14 @@ const POST_ROUTES = new Map([
 
 export function intelligenceHttpCapabilities() {
   return {
-    version: '1.0',
+    version: '1.1',
     getRoutes: [...GET_ROUTES.keys()],
     postRoutes: [...POST_ROUTES.keys(), '/api/v1/weather/activity-check', '/api/v1/weather/replacement-plan'],
     policy: {
       previewAndDecisionLayerOnly: true,
       automaticBookingAllowed: false,
       automaticItineraryMutationAllowed: false,
+      operationalFactsMayRefreshAutomatically: true,
       explicitUserApprovalRequiredForItineraryMutation: true,
       unknownProviderFactsRemainUnresolved: true
     }
@@ -66,7 +70,7 @@ export async function handleIntelligenceHttp(req, res, path) {
   }
 
   if (req.method === 'GET' && GET_ROUTES.has(path)) {
-    const result = GET_ROUTES.get(path)();
+    const result = await GET_ROUTES.get(path)();
     return sendJson(res, 200, result);
   }
 
@@ -82,7 +86,7 @@ export async function handleIntelligenceHttp(req, res, path) {
 
   if (req.method === 'POST' && POST_ROUTES.has(path)) {
     const body = await readJson(req);
-    const result = POST_ROUTES.get(path)(body);
+    const result = await POST_ROUTES.get(path)(body);
     return sendJson(res, 200, result);
   }
 
