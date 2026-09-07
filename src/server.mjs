@@ -11,11 +11,15 @@ import { buildAutomaticPlan, buildExportManifest, collaborationCapabilities, nor
 import { buildDietaryTravelCard, buildGroupDietarySummary, dietaryCapabilities, evaluateFoodCandidate } from './dietary-profile.mjs';
 import { assessPlanQuality, buildPlanningBrief, buildPlanningStrategy, buildPreferenceLearningEvent, buildReplanDecision, plannerBrainCapabilities } from './planner-brain.mjs';
 import { handleCrewCheckIntegrationHttp } from './crewcheck-http-integration.mjs';
+import { handlePlannerProposalHttp } from './planner-proposal-http.mjs';
+import { createRuntimePersistence } from './persistence.mjs';
 
 const config = getRuntimeConfig();
 const MAX_JSON_BYTES = 256 * 1024;
 const MAX_PDF_BYTES = 15 * 1024 * 1024;
 const STATIC_FILES = buildStaticMap();
+const PROPOSAL_PATH_PREFIX = '/api/v1/planner/itinerary/proposals';
+const runtimePersistence = initializeRuntimePersistence();
 
 const server = http.createServer(async (req, res) => {
   const requestId = randomUUID();
@@ -32,6 +36,14 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (await handleCrewCheckIntegrationHttp(req, res, path)) return;
+
+    if (path === PROPOSAL_PATH_PREFIX || path.startsWith(`${PROPOSAL_PATH_PREFIX}/`)) {
+      if (runtimePersistence.error) throw runtimePersistence.error;
+      if (await handlePlannerProposalHttp(req, res, path, {
+        sessionSigningKey: config.session.signingKey,
+        persistence: runtimePersistence.persistence
+      })) return;
+    }
 
     if (req.method === 'GET' && path === '/health') {
       return json(res, 200, {
@@ -264,6 +276,16 @@ server.listen(config.port, '0.0.0.0', () => {
   console.log(JSON.stringify({ level: 'info', event: 'server_started', service: 'voyage-api', port: config.port, environment: config.nodeEnv }));
 });
 
+function initializeRuntimePersistence() {
+  try {
+    return { persistence: createRuntimePersistence({ nodeEnv: config.nodeEnv, databaseConfigured: config.databaseConfigured }), error: null };
+  } catch (error) {
+    if (!Number.isInteger(error?.statusCode)) error.statusCode = 503;
+    console.error(JSON.stringify({ level: 'error', event: 'persistence_unavailable', errorCode: error?.code || 'persistence_unavailable' }));
+    return { persistence: null, error };
+  }
+}
+
 function buildStaticMap() {
   const definitions = [
     ['index.html', 'text/html; charset=utf-8'],
@@ -362,7 +384,10 @@ function publicErrorCode(error) {
   const known = new Set([
     'request_body_too_large', 'invalid_json', 'unsupported_content_type', 'pdf_buffer_required', 'empty_pdf',
     'pdf_too_large', 'invalid_pdf_signature', 'gmail_pubsub_message_data_required', 'gmail_pubsub_data_invalid', 'gmail_pubsub_payload_incomplete',
-    'crewcheck_bridge_body_too_large', 'crewcheck_bridge_invalid_json'
+    'crewcheck_bridge_body_too_large', 'crewcheck_bridge_invalid_json',
+    'authentication_not_configured', 'authentication_required', 'authentication_invalid', 'session_expired',
+    'session_not_found', 'session_revoked', 'proposal_id_invalid', 'production_persistence_required',
+    'tidb_execute_required'
   ]);
   return known.has(error?.message) ? error.message : 'internal_error';
 }
