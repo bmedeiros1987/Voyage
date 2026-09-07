@@ -32,6 +32,8 @@ async function call(path, method = 'GET', body = null) {
 test('capabilities list the unified intelligence API without mutation permission', async () => {
   const direct = intelligenceHttpCapabilities();
   assert.ok(direct.getRoutes.includes('/api/v1/baggage/capabilities'));
+  assert.ok(direct.getRoutes.includes('/api/v1/baggage/passport/capabilities'));
+  assert.ok(direct.postRoutes.includes('/api/v1/baggage/passport/analyze'));
   assert.ok(direct.postRoutes.includes('/api/v1/journey/command-center'));
   assert.equal(direct.policy.automaticItineraryMutationAllowed, false);
 
@@ -58,6 +60,22 @@ test('lodging and baggage engines are exposed as preview/decision APIs', async (
   });
   assert.equal(baggage.payload.decision, 'THROUGH_CHECKED_DO_NOT_COLLECT');
   assert.equal(baggage.payload.rules.carouselDoesNotDetermineThroughCheck, true);
+});
+
+test('baggage passport converts tag scan into verified through-check evidence', async () => {
+  const result = await call('/api/v1/baggage/passport/analyze', 'POST', {
+    itinerary: { connectionAirport: 'GRU', finalDestinationAirport: 'BSB', knownAirports: ['GRU', 'BSB'] },
+    reservation: { sameReservationCode: true, sameCarrier: true },
+    scan: {
+      text: 'BSB\nLA4321\nGRU\nLA1234\n0 045 151884',
+      lines: [{ text: 'BSB', top: 10 }, { text: 'GRU', top: 40 }]
+    },
+    customsReclaimRequired: false
+  });
+  assert.equal(result.res.statusCode, 200);
+  assert.equal(result.payload.inference.state, 'THROUGH_TAG_CONFIRMED');
+  assert.equal(result.payload.baggageEvidence.throughChecked, true);
+  assert.equal(result.payload.parsed.baggageLicensePlate, '0045151884');
 });
 
 test('command center remains proposal-only until approval', async () => {
