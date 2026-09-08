@@ -1,23 +1,32 @@
 /**
  * Single owner of where the Voyage clients send API requests.
  *
- * Same-origin is the default and the only thing a browser session can reach.
- * A packaged shell — Capacitor serves the bundle from https://localhost, which
- * has no API of its own — declares its API origin in a build-time meta tag that
- * ships inside the bundle. Nothing readable or writable at runtime (storage,
- * query string, a value typed into the page) is trusted, so an XSS, a hostile
- * extension or a DevTools session cannot repoint the API and harvest imports or
- * session bearer tokens.
+ * Browser sessions are always same-origin. A packaged Capacitor shell is the
+ * only client allowed to honor the build-time voyage-api-origin meta tag,
+ * because its local origin (https://localhost or capacitor://localhost) does
+ * not host the Voyage API. Runtime-writable state (query params, storage,
+ * user input) is never trusted as an API destination.
  */
-const API_ORIGIN = resolveTrustedApiOrigin();
+const API_ORIGIN = resolveTrustedApiOrigin({
+  configured: document.querySelector('meta[name="voyage-api-origin"]')?.getAttribute('content')?.trim(),
+  pageOrigin: globalThis.location?.origin || ''
+});
 
-function resolveTrustedApiOrigin() {
-  const configured = document.querySelector('meta[name="voyage-api-origin"]')?.getAttribute('content')?.trim();
-  if (!configured) return '';
+const CAPACITOR_SHELL_ORIGINS = new Set([
+  'https://localhost',
+  'capacitor://localhost'
+]);
+
+export function resolveTrustedApiOrigin({ configured, pageOrigin } = {}) {
+  const currentOrigin = String(pageOrigin || '').trim().toLowerCase();
+  if (!CAPACITOR_SHELL_ORIGINS.has(currentOrigin)) return '';
+  if (typeof configured !== 'string' || !configured.trim()) return '';
+
   try {
-    const url = new URL(configured);
+    const url = new URL(configured.trim());
     if (url.protocol !== 'https:') return '';
     if (url.username || url.password) return '';
+    if (url.search || url.hash) return '';
     return url.origin;
   } catch {
     return '';
