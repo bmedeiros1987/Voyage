@@ -32,7 +32,7 @@ jobs:
           MANUS_PROJECT_ID: ${{ vars.MANUS_AUDIT_PROJECT_ID }}
         run: |
           set -euo pipefail
-          test -n "$MANUS_GITHUB_CONNECTOR_ID"
+          MANUS_GITHUB_CONNECTOR_ID="${MANUS_GITHUB_CONNECTOR_ID:-bbb0df76-66bd-4a24-ae4f-2aac4750d90b}"
           test -f .manus/audit-request.json
 
           PR_NUMBER="$(jq -er '.pr_number' .manus/audit-request.json)"
