@@ -1,13 +1,83 @@
 import { randomUUID } from 'node:crypto';
 
-export function createRuntimePersistence({ nodeEnv = 'development', databaseConfigured = false, execute } = {}) {
+export function createRuntimePersistence({
+  nodeEnv = 'development',
+  databaseConfigured = false,
+  databaseUrl = process.env.DATABASE_URL,
+  execute,
+  driverLoader
+} = {}) {
   const environment = String(nodeEnv || 'development').trim().toLowerCase();
   if (databaseConfigured) {
-    if (typeof execute !== 'function') throw namedError('tidb_execute_required', 503);
-    return createTidbPersistence({ execute });
+    const resolvedExecute = typeof execute === 'function'
+      ? execute
+      : createMysqlTidbExecute({ databaseUrl, driverLoader });
+    return createTidbPersistence({ execute: resolvedExecute });
   }
   if (environment === 'production') throw namedError('production_persistence_required', 503);
   return createMemoryPersistence();
+}
+
+export function createMysqlTidbExecute({ databaseUrl, driverLoader = defaultMysqlDriverLoader } = {}) {
+  const config = parseTidbDatabaseUrl(databaseUrl);
+  let poolPromise = null;
+
+  return async function execute(sql, params = []) {
+    if (!poolPromise) {
+      poolPromise = Promise.resolve()
+        .then(() => driverLoader())
+        .then((module) => {
+          const createPool = module?.createPool || module?.default?.createPool;
+          if (typeof createPool !== 'function') throw namedError('tidb_driver_invalid', 503);
+          return createPool({
+            ...config,
+            waitForConnections: true,
+            connectionLimit: 10,
+            enableKeepAlive: true,
+            keepAliveInitialDelay: 0
+          });
+        })
+        .catch((error) => {
+          poolPromise = null;
+          if (error?.code === 'tidb_driver_invalid') throw error;
+          throw namedError('tidb_driver_unavailable', 503, error);
+        });
+    }
+
+    const pool = await poolPromise;
+    if (!pool || typeof pool.execute !== 'function') throw namedError('tidb_driver_invalid', 503);
+    return pool.execute(sql, params);
+  };
+}
+
+export function parseTidbDatabaseUrl(databaseUrl) {
+  if (typeof databaseUrl !== 'string' || !databaseUrl.trim()) throw namedError('tidb_database_url_required', 503);
+
+  let parsed;
+  try {
+    parsed = new URL(databaseUrl);
+  } catch {
+    throw namedError('tidb_database_url_invalid', 503);
+  }
+
+  if (!['mysql:', 'mysqls:'].includes(parsed.protocol)) throw namedError('tidb_database_url_invalid', 503);
+  if (!parsed.hostname || !parsed.username) throw namedError('tidb_database_url_invalid', 503);
+
+  const database = parsed.pathname.replace(/^\//, '').trim();
+  if (!database) throw namedError('tidb_database_url_invalid', 503);
+
+  return Object.freeze({
+    host: parsed.hostname,
+    port: Number(parsed.port || 4000),
+    user: decodeURIComponent(parsed.username),
+    password: decodeURIComponent(parsed.password || ''),
+    database,
+    ssl: Object.freeze({ minVersion: 'TLSv1.2', rejectUnauthorized: true })
+  });
+}
+
+async function defaultMysqlDriverLoader() {
+  return import('mysql2/promise');
 }
 
 export function createMemoryPersistence() {
@@ -177,4 +247,9 @@ function normalizeIso(value) {
 }
 function toSqlDate(value) { return normalizeIso(value).slice(0, 23).replace('T', ' '); }
 function nullableSqlDate(value) { return value ? toSqlDate(value) : null; }
-function namedError(code, statusCode = 400) { const error = new Error(code); error.code = code; error.statusCode = statusCode; return error; }
+function namedError(code, statusCode = 400, cause) {
+  const error = new Error(code, cause ? { cause } : undefined);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
