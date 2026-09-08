@@ -11,6 +11,13 @@ export function getRuntimeConfig(env = process.env) {
   const appName = isConfigured(env.APP_NAME) ? env.APP_NAME.trim() : 'Voyage by CrewCheck';
   const appUrl = isConfigured(env.APP_URL) ? env.APP_URL.trim() : 'https://crewcheck.online/voyage';
   const sessionSigningKey = isConfigured(env.SESSION_SIGNING_KEY) && env.SESSION_SIGNING_KEY.trim().length >= 32 ? env.SESSION_SIGNING_KEY.trim() : null;
+  const pubsubServiceAccountEmail = isConfigured(env.GOOGLE_PUBSUB_SERVICE_ACCOUNT_EMAIL)
+    ? env.GOOGLE_PUBSUB_SERVICE_ACCOUNT_EMAIL.trim().toLowerCase()
+    : null;
+  const pubsubConfigured =
+    isConfigured(env.GOOGLE_PUBSUB_TOPIC) &&
+    isConfigured(env.GOOGLE_PUBSUB_AUDIENCE) &&
+    Boolean(pubsubServiceAccountEmail);
 
   if (nodeEnv === 'production' && !sessionSigningKey) {
     throw configurationError('session_signing_key_required');
@@ -34,12 +41,9 @@ export function getRuntimeConfig(env = process.env) {
         isConfigured(env.GOOGLE_CLIENT_SECRET) &&
         isConfigured(env.GOOGLE_REDIRECT_URI) &&
         isConfigured(env.TOKEN_ENCRYPTION_KEY),
-      pubsubConfigured:
-        isConfigured(env.GOOGLE_PUBSUB_TOPIC) && isConfigured(env.GOOGLE_PUBSUB_AUDIENCE),
+      pubsubConfigured,
       pubsubAudience: isConfigured(env.GOOGLE_PUBSUB_AUDIENCE) ? env.GOOGLE_PUBSUB_AUDIENCE.trim() : null,
-      pubsubServiceAccountEmail: isConfigured(env.GOOGLE_PUBSUB_SERVICE_ACCOUNT_EMAIL)
-        ? env.GOOGLE_PUBSUB_SERVICE_ACCOUNT_EMAIL.trim().toLowerCase()
-        : null
+      pubsubServiceAccountEmail
     }),
     sharedCrewCheck: Object.freeze({
       configured:
