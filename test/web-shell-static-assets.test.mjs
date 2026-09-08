@@ -32,6 +32,11 @@ test('branded icon referenced by HTML and manifest has a server route', () => {
   assert.match(server, /`\/resources\/\$\{name\}`/);
 });
 
+test('the branded icon is precached, so it survives an offline reload', () => {
+  assert.match(serviceWorker, /'\.\.\/resources\/icon\.svg'/, 'the service worker must precache the branded icon');
+  assert.match(index, /\.\.\/resources\/icon\.svg/);
+});
+
 test('adaptive home assets cannot regress to 404 from server omissions', () => {
   assert.match(index, /\.\/adaptive-home\.css/);
   assert.match(index, /\.\/adaptive-home\.js/);

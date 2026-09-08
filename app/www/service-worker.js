@@ -1,4 +1,4 @@
-const CACHE = 'voyage-shell-v11-api-origin-adaptive-home';
+const CACHE = 'voyage-shell-v12-offline-branded-icon';
 const SHARED_PDF_CACHE = 'voyage-shared-pdf-v1';
 const SHARED_PDF_PREFIX = '/__voyage_shared_pdf__/';
 const SHARED_PDF_TTL_MS = 30 * 60 * 1000;
@@ -19,7 +19,8 @@ const CORE = [
   './app.js',
   './import-enhancements.js',
   './native-pdf-share.js',
-  './manifest.webmanifest'
+  './manifest.webmanifest',
+  '../resources/icon.svg'
 ];
 
 self.addEventListener('install', (event) => {
