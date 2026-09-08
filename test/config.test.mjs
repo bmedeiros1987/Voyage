@@ -20,6 +20,23 @@ test('gmail remains disabled while Render placeholders exist', () => {
   assert.equal(config.google.gmailConfigured, false);
 });
 
+test('Pub/Sub remains fail-closed until audience, topic, and expected service account are all configured', () => {
+  const incomplete = getRuntimeConfig({
+    GOOGLE_PUBSUB_TOPIC: 'projects/example/topics/gmail',
+    GOOGLE_PUBSUB_AUDIENCE: 'https://example.test/api/v1/integrations/gmail/pubsub'
+  });
+  assert.equal(incomplete.google.pubsubConfigured, false);
+  assert.equal(incomplete.google.pubsubServiceAccountEmail, null);
+
+  const configured = getRuntimeConfig({
+    GOOGLE_PUBSUB_TOPIC: 'projects/example/topics/gmail',
+    GOOGLE_PUBSUB_AUDIENCE: 'https://example.test/api/v1/integrations/gmail/pubsub',
+    GOOGLE_PUBSUB_SERVICE_ACCOUNT_EMAIL: ' Voyage-Push@Example.IAM.GServiceAccount.com '
+  });
+  assert.equal(configured.google.pubsubConfigured, true);
+  assert.equal(configured.google.pubsubServiceAccountEmail, 'voyage-push@example.iam.gserviceaccount.com');
+});
+
 test('crew member still carries explicit desired days', () => {
   const profile = normalizeAvailabilityInput({
     userType: 'CREW_MEMBER',
