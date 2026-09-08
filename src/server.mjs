@@ -126,6 +126,7 @@ function buildStaticMap() {
     ['responsive-hardening.css', 'text/css; charset=utf-8'],
     ['imports.css', 'text/css; charset=utf-8'],
     ['api-origin.js', 'text/javascript; charset=utf-8'],
+    ['retention-policy.js', 'text/javascript; charset=utf-8'],
     ['signature-experience.js', 'text/javascript; charset=utf-8'],
     ['adaptive-home.js', 'text/javascript; charset=utf-8'],
     ['app.js', 'text/javascript; charset=utf-8'],

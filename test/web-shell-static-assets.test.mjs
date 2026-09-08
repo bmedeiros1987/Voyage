@@ -9,7 +9,7 @@ const index = await readFile(new URL('../app/www/index.html', import.meta.url), 
 const precachedWebAssets = [
   'styles.css', 'themes.css', 'premium-layout.css', 'premium-overrides.css',
   'signature-experience.css', 'adaptive-home.css', 'responsive-hardening.css',
-  'imports.css', 'api-origin.js', 'signature-experience.js', 'adaptive-home.js',
+  'imports.css', 'api-origin.js', 'retention-policy.js', 'signature-experience.js', 'adaptive-home.js',
   'app.js', 'import-enhancements.js', 'native-pdf-share.js', 'manifest.webmanifest'
 ];
 

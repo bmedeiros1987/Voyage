@@ -59,12 +59,11 @@ test('no client reaches the network without going through the single origin owne
   }
 });
 
-test('purging an expired raw blob also drops the raw extracted text', async () => {
+test('the importer owns no retention rule of its own', async () => {
   const source = await readFile(new URL('../app/www/import-enhancements.js', import.meta.url), 'utf8');
-  const purge = source.slice(source.indexOf('async function purgeExpiredSyncedBlobs'));
-  assert.match(purge, /blob:\s*null/, 'the raw blob must still be dropped');
-  assert.match(purge, /textPreview:\s*''/, 'the raw extracted text must be dropped with the blob');
-  assert.match(purge, /retentionState:\s*'BLOB_PURGED'/);
+  assert.match(source, /import \{ purgedRecord, rawBlobRetention \} from '\.\/retention-policy\.js';/);
+  assert.doesNotMatch(source, /blob:\s*null/, 'dropping the bytes belongs to the shared policy, not a second copy here');
+  // What the purge actually drops and keeps is covered by local-document-retention.test.mjs.
 });
 
 /**

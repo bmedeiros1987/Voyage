@@ -113,7 +113,7 @@ test('Universal importer has a single frontend owner and review is evidence-firs
   assert.match(importer, /extractedFacts/);
   assert.match(importer, /factConfidence/);
   assert.match(importer, /Nenhum arquivo foi marcado como salvo/);
-  assert.match(importer, /SYNCED_RAW_BLOB_TTL_MS/);
+  assert.match(importer, /from '\.\/retention-policy\.js'/, 'raw-blob retention is bounded by the shared policy');
   assert.match(importer, /deleteRecord/);
   assert.match(css, /import-review-evidence/);
 });

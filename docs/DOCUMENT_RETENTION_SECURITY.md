@@ -28,6 +28,36 @@ Cache Storage is not application-level encryption. Therefore this cache is inten
 
 The Android share plugin reads the provider URI into memory only after enforcing the 15 MiB limit and `%PDF-` signature. After one successful consumption it replaces the share intent so foreground/resume checks cannot import the same document again. Voyage must not create a durable Android copy merely to process a share intent.
 
+### Local importer queue (IndexedDB)
+
+The PWA importer stores each accepted PDF in the browser's IndexedDB store
+`voyage-local` so the import survives a reload and can be retried offline. This
+is durable raw-document storage on the device and is governed here.
+
+- The raw `blob` and the raw `textPreview` are transient. Structured facts,
+  provenance, review reasons and the source digest are what the record keeps.
+- **Synced records** (uploaded and parsed, so carrying `syncedAt` and no longer
+  `LOCAL_QUEUED`) expire **30 days after `syncedAt`**.
+- **Never-synced records** (`LOCAL_QUEUED` — offline device, or a backend that
+  kept refusing) expire **30 days after `createdAt`**. Without this clock a
+  document that never reached the backend would sit on the device forever, so
+  local retention is bounded independently of any upload ever succeeding.
+- Expiry removes only `blob` and `textPreview`, marks `retentionState`
+  (`BLOB_PURGED` when synced, `LOCAL_BLOB_EXPIRED` when it never synced) and
+  records `rawBlobPurgedAt`. It never marks the item as synced and never
+  fabricates an upload that did not happen.
+- An unreadable or missing timestamp never triggers a purge: a corrupt date must
+  not be a reason to destroy a user's document.
+- The purge runs at shell bootstrap, when the imports screen opens and when the
+  device comes back online. It is idempotent — a record whose bytes are already
+  gone is skipped.
+- Manual entries (`application/vnd.voyage.manual+json`) carry no raw bytes and
+  are out of scope for this expiry; they are user-authored structured data.
+
+IndexedDB is not application-level encryption. Bounded local retention is the
+control here; treating this store as durable document storage would require
+authenticated encryption at rest and a separate documented purpose.
+
 ### API/manual upload
 
 The foundation API ingests the request body for parsing and returns structured results; it does not define durable raw-PDF storage. Any future server-side source retention must be opt-in by an explicit product purpose, associated with an authenticated owner, encrypted at rest, assigned a bounded TTL, and covered by a purge job plus delete regression tests before release.
@@ -43,6 +73,8 @@ OAuth refresh/access tokens are secrets, not documents. When persistence is enab
 | Data class | Default retention | Storage rule |
 | --- | --- | --- |
 | PWA shared raw PDF bridge | <= 30 minutes; delete on consumption | Dedicated transient Cache Storage only |
+| Local importer raw PDF, synced | <= 30 days from `syncedAt` | IndexedDB `voyage-local`; bytes and raw text purged, facts kept |
+| Local importer raw PDF, never synced (`LOCAL_QUEUED`) | <= 30 days from `createdAt` | IndexedDB `voyage-local`; same purge, marked `LOCAL_BLOB_EXPIRED` |
 | Android shared raw PDF | Memory/intent lifetime; consume once | No Voyage durable copy |
 | Manual/API raw PDF | Request-processing lifetime in current foundation | No durable raw storage by default |
 | Structured travel facts/provenance | Account/trip lifecycle, subject to user deletion | Authenticated owner-scoped persistence |

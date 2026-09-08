@@ -1,4 +1,4 @@
-const CACHE = 'voyage-shell-v12-offline-branded-icon';
+const CACHE = 'voyage-shell-v13-local-retention';
 const SHARED_PDF_CACHE = 'voyage-shared-pdf-v1';
 const SHARED_PDF_PREFIX = '/__voyage_shared_pdf__/';
 const SHARED_PDF_TTL_MS = 30 * 60 * 1000;
@@ -14,6 +14,7 @@ const CORE = [
   './responsive-hardening.css',
   './imports.css',
   './api-origin.js',
+  './retention-policy.js',
   './signature-experience.js',
   './adaptive-home.js',
   './app.js',

@@ -1,10 +1,10 @@
 import { fetchApi } from './api-origin.js';
+import { purgedRecord, rawBlobRetention } from './retention-policy.js';
 
 const DB_NAME = 'voyage-local';
 const DB_VERSION = 1;
 const STORE = 'imports';
 const MAX_PDF_BYTES = 15 * 1024 * 1024;
-const SYNCED_RAW_BLOB_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 queueMicrotask(() => installUniversalImporterEnhancements().catch((error) => reportStorageFailure(error)));
 
@@ -25,13 +25,17 @@ async function installUniversalImporterEnhancements() {
 
   document.addEventListener('click', handleEnhancementClick);
   document.addEventListener('submit', handleEnhancementSubmit);
-  document.addEventListener('voyage:imports-open', () => refreshQueueViaScreen().catch((error) => reportStorageFailure(error)));
-  window.addEventListener('online', () => syncManualItems().catch((error) => reportStorageFailure(error)));
+  document.addEventListener('voyage:imports-open', () => purgeExpiredRawBlobs()
+    .then(() => refreshQueueViaScreen())
+    .catch((error) => reportStorageFailure(error)));
+  window.addEventListener('online', () => purgeExpiredRawBlobs()
+    .then(() => syncManualItems())
+    .catch((error) => reportStorageFailure(error)));
 
   const observer = new MutationObserver(() => decorateImportRows(importList));
   observer.observe(importList, { childList: true, subtree: true });
   decorateImportRows(importList);
-  await purgeExpiredSyncedBlobs();
+  await purgeExpiredRawBlobs();
   await syncManualItems();
 }
 
@@ -489,21 +493,16 @@ async function listRecords() {
   finally { db.close(); }
 }
 
-async function purgeExpiredSyncedBlobs() {
+/**
+ * Idempotent: a record whose bytes are gone no longer holds raw bytes, so a
+ * second pass skips it. Safe to run on every entry point.
+ */
+async function purgeExpiredRawBlobs() {
   const records = await listRecords().catch(() => []);
   const now = Date.now();
   for (const record of records) {
-    if (!record?.blob || !record.syncedAt || record.status === 'LOCAL_QUEUED') continue;
-    const reference = Date.parse(record.syncedAt || record.createdAt || '');
-    if (!Number.isFinite(reference) || now - reference <= SYNCED_RAW_BLOB_TTL_MS) continue;
-    const updated = {
-      ...record,
-      blob: null,
-      textPreview: '',
-      retentionState: 'BLOB_PURGED',
-      rawBlobPurgedAt: new Date().toISOString()
-    };
-    await putRecord(updated);
+    if (!rawBlobRetention(record, now).expired) continue;
+    await putRecord(purgedRecord(record));
   }
 }
 
