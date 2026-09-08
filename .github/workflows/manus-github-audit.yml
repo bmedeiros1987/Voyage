@@ -1,6 +1,11 @@
 name: Manus audit bridge
 
 on:
+  push:
+    branches:
+      - manus-audit-control
+    paths:
+      - '.manus/audit-request.json'
   issue_comment:
     types: [created]
   workflow_dispatch:
@@ -18,7 +23,7 @@ permissions:
   checks: read
 
 concurrency:
-  group: ${{ github.workflow }}-pr-${{ github.event.issue.number || inputs.pr_number }}
+  group: ${{ github.workflow }}-${{ github.event.issue.number || inputs.pr_number || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -27,6 +32,10 @@ jobs:
     if: >-
       github.repository == 'bmedeiros1987/Voyage' &&
       (
+        (
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/manus-audit-control'
+        ) ||
         (
           github.event_name == 'issue_comment' &&
           github.event.issue.pull_request &&
@@ -48,6 +57,10 @@ jobs:
     timeout-minutes: 35
 
     steps:
+      - name: Checkout control request
+        if: github.event_name == 'push'
+        uses: actions/checkout@v4
+
       - name: Build immutable audit request
         id: request
         env:
@@ -65,6 +78,16 @@ jobs:
             echo 'MANUS_GITHUB_CONNECTOR_ID repository variable is required.' >&2
             exit 20
           }
+
+          EXPECTED_SHA=""
+          if [ "$EVENT_NAME" = "push" ]; then
+            test -f .manus/audit-request.json
+            CONTROL_JSON="$(cat .manus/audit-request.json)"
+            PR_NUMBER="$(jq -r '.pr_number' <<<"$CONTROL_JSON")"
+            EXPECTED_SHA="$(jq -r '.requested_sha' <<<"$CONTROL_JSON")"
+            TRIGGER_COMMENT="$(jq -r '.scope // ""' <<<"$CONTROL_JSON")"
+            [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          fi
 
           [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
 
@@ -86,6 +109,11 @@ jobs:
           [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$PR_STATE" = "open"
           test "$HEAD_REPO" = "${{ github.repository }}"
+
+          if [ -n "$EXPECTED_SHA" ] && [ "$SHA" != "$EXPECTED_SHA" ]; then
+            echo "Control request is stale: requested=$EXPECTED_SHA current=$SHA" >&2
+            exit 22
+          fi
 
           if [ "$PR_NUMBER" = "4" ]; then
             AUDIT_SCOPE='Audit Voyage PR #4 as the independent Product/UX/E2E gate. Focus on Adaptive Home completeness (smart defaults, Essential/Advanced, pin/hide/size/reorder/reset, schema migration and offline persistence), CTA honesty/no-op elimination, >=44px targets, keyboard/focus/labels/a11y, Journey Calendar, responsive mobile/tablet behavior, Automatic/Dark/Light themes, and offline/PWA regressions including document-retention lifecycle. Verify the relevant exact-SHA CI and Android evidence from GitHub. Do not redesign backend auth/session/proposals/persistence, and do not create a competing architecture.'
