@@ -29,39 +29,55 @@ concurrency:
 jobs:
   request-audit:
     name: Request and collect Manus exact-SHA audit
-    if: >-
-      github.repository == 'bmedeiros1987/Voyage' &&
-      (
-        (
-          github.event_name == 'push' &&
-          github.ref == 'refs/heads/manus-audit-control'
-        ) ||
-        (
-          github.event_name == 'issue_comment' &&
-          github.event.issue.pull_request &&
-          (
-            github.event.comment.author_association == 'OWNER' ||
-            github.event.comment.author_association == 'MEMBER' ||
-            github.event.comment.author_association == 'COLLABORATOR'
-          ) &&
-          (
-            github.event.comment.body == '@manus' ||
-            startsWith(github.event.comment.body, '@manus ') ||
-            startsWith(github.event.comment.body, '[VOYAGE][CHATGPT→MANUS]') ||
-            startsWith(github.event.comment.body, '[VOYAGE][CLAUDE→MANUS]')
-          )
-        ) ||
-        github.event_name == 'workflow_dispatch'
-      )
     runs-on: ubuntu-latest
     timeout-minutes: 35
 
     steps:
+      - name: Authorize trusted trigger
+        id: trigger
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          COMMENT_ASSOCIATION: ${{ github.event.comment.author_association || '' }}
+          COMMENT_BODY: ${{ github.event.comment.body || '' }}
+        run: |
+          set -euo pipefail
+          allowed=false
+
+          case "$EVENT_NAME" in
+            push)
+              if [ "$REF_NAME" = "manus-audit-control" ]; then
+                allowed=true
+              fi
+              ;;
+            workflow_dispatch)
+              allowed=true
+              ;;
+            issue_comment)
+              case "$COMMENT_ASSOCIATION" in
+                OWNER|MEMBER|COLLABORATOR)
+                  if [ "$COMMENT_BODY" = "@manus" ] || \
+                     [[ "$COMMENT_BODY" == "@manus "* ]] || \
+                     [[ "$COMMENT_BODY" == "[VOYAGE][CHATGPT→MANUS]"* ]] || \
+                     [[ "$COMMENT_BODY" == "[VOYAGE][CLAUDE→MANUS]"* ]]; then
+                    allowed=true
+                  fi
+                  ;;
+              esac
+              ;;
+          esac
+
+          echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
+          if [ "$allowed" != "true" ]; then
+            echo "Ignoring untrusted or non-command trigger."
+          fi
+
       - name: Checkout control request
-        if: github.event_name == 'push'
+        if: steps.trigger.outputs.allowed == 'true' && github.event_name == 'push'
         uses: actions/checkout@v4
 
       - name: Build immutable audit request
+        if: steps.trigger.outputs.allowed == 'true'
         id: request
         env:
           GH_TOKEN: ${{ github.token }}
@@ -201,6 +217,7 @@ jobs:
           echo "request_json=$PWD/request.json" >> "$GITHUB_OUTPUT"
 
       - name: Create private Manus audit task
+        if: steps.trigger.outputs.allowed == 'true'
         id: create
         env:
           MANUS_API_KEY: ${{ secrets.MANUS_API_KEY }}
@@ -228,6 +245,7 @@ jobs:
           echo "task_id=$TASK_ID" >> "$GITHUB_OUTPUT"
 
       - name: Poll Manus, validate exact SHA, and publish verdict
+        if: steps.trigger.outputs.allowed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           MANUS_API_KEY: ${{ secrets.MANUS_API_KEY }}
