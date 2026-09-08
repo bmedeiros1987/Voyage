@@ -46,10 +46,25 @@ test('Gmail Pub/Sub fails closed when push verification is not configured', asyn
   });
 });
 
-test('configured Gmail Pub/Sub requires a Bearer OIDC token before accepting an envelope', async () => {
+test('Gmail Pub/Sub without the expected push service account stays unconfigured', async () => {
   await withServer({
     GOOGLE_PUBSUB_TOPIC: 'projects/example/topics/voyage',
     GOOGLE_PUBSUB_AUDIENCE: 'https://voyage.example/api/v1/integrations/gmail/pubsub'
+  }, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/v1/integrations/gmail/pubsub`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(validEnvelope)
+    });
+    assert.equal(response.status, 503);
+  });
+});
+
+test('configured Gmail Pub/Sub requires a Bearer OIDC token before accepting an envelope', async () => {
+  await withServer({
+    GOOGLE_PUBSUB_TOPIC: 'projects/example/topics/voyage',
+    GOOGLE_PUBSUB_AUDIENCE: 'https://voyage.example/api/v1/integrations/gmail/pubsub',
+    GOOGLE_PUBSUB_SERVICE_ACCOUNT_EMAIL: 'voyage-push@example.iam.gserviceaccount.com'
   }, async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/v1/integrations/gmail/pubsub`, {
       method: 'POST',
