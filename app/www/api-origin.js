@@ -7,15 +7,15 @@
  * not host the Voyage API. Runtime-writable state (query params, storage,
  * user input) is never trusted as an API destination.
  */
-const API_ORIGIN = resolveTrustedApiOrigin({
-  configured: document.querySelector('meta[name="voyage-api-origin"]')?.getAttribute('content')?.trim(),
-  pageOrigin: globalThis.location?.origin || ''
-});
-
 const CAPACITOR_SHELL_ORIGINS = new Set([
   'https://localhost',
   'capacitor://localhost'
 ]);
+
+const API_ORIGIN = resolveTrustedApiOrigin({
+  configured: globalThis.document?.querySelector?.('meta[name="voyage-api-origin"]')?.getAttribute('content')?.trim(),
+  pageOrigin: globalThis.location?.origin || ''
+});
 
 export function resolveTrustedApiOrigin({ configured, pageOrigin } = {}) {
   const currentOrigin = String(pageOrigin || '').trim().toLowerCase();
