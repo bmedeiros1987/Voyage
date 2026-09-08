@@ -31,6 +31,9 @@ export function createMysqlTidbExecute({ databaseUrl, driverLoader = defaultMysq
           if (typeof createPool !== 'function') throw namedError('tidb_driver_invalid', 503);
           return createPool({
             ...config,
+            // mysql2 normalizes the TLS options in place, so hand it a mutable
+            // copy: the canonical config stays frozen and unforgeable.
+            ssl: { ...config.ssl },
             waitForConnections: true,
             connectionLimit: 10,
             enableKeepAlive: true,
