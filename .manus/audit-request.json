@@ -1,0 +1,5 @@
+{
+  "pr_number": 4,
+  "requested_sha": "28b1338f8270ea495ca6c86a84a57e365dfef062",
+  "scope": "Final independent Product/UX/E2E gate for Voyage PR #4. Revalidate Adaptive Home, CTA honesty/no-op behavior, >=44px/a11y, Journey Calendar, responsive mobile/tablet behavior, Automatic/Dark/Light themes, and offline/PWA/document-retention regressions. Verify exact-SHA GitHub CI and Android evidence. Read-only only; do not modify code and do not merge."
+}
