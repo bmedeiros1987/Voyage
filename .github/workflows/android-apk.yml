@@ -36,7 +36,7 @@ jobs:
         run: npm run android:assets
       - name: Configure packaged API origin
         env:
-          VOYAGE_API_ORIGIN: ${{ vars.VOYAGE_API_ORIGIN || 'https://crewcheck.online' }}
+          VOYAGE_API_ORIGIN: ${{ vars.VOYAGE_API_ORIGIN || 'https://voyage-api-okay.onrender.com' }}
         run: npm run android:api-origin
       - name: Synchronize web assets
         run: npx cap sync android
