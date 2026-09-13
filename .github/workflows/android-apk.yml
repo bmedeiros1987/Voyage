@@ -6,6 +6,9 @@ on:
     branches: [main, feat/**, fix/**]
     paths:
       - 'app/**'
+      - 'src/server.mjs'
+      - 'test/android-remote-api-contract.test.mjs'
+      - 'test/server-security-runtime.test.mjs'
       - '.github/workflows/android-apk.yml'
 
 permissions:
