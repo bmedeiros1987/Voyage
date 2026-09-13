@@ -2,6 +2,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const indexPath = fileURLToPath(new URL('../www/index.html', import.meta.url));
+const API_ORIGIN_META = /<meta\s+name=["']voyage-api-origin["']\s+content=["'][^"']*["']\s*\/?>/gi;
+const API_ORIGIN_META_CAPTURE = /(<meta\s+name=["']voyage-api-origin["']\s+content=["'])[^"']*(["']\s*\/?>)/i;
 
 export function normalizeApiOrigin(value) {
   if (typeof value !== 'string' || !value.trim()) throw new Error('voyage_api_origin_required');
@@ -19,9 +21,10 @@ export function normalizeApiOrigin(value) {
 }
 
 export function injectApiOriginHtml(html, origin) {
-  const marker = /(<meta\s+name=["']voyage-api-origin["']\s+content=["'])[^"']*(["']\s*\/?>)/i;
-  if (!marker.test(html)) throw new Error('voyage_api_origin_meta_missing');
-  return html.replace(marker, `$1${origin}$2`);
+  const matches = String(html).match(API_ORIGIN_META) || [];
+  if (matches.length === 0) throw new Error('voyage_api_origin_meta_missing');
+  if (matches.length !== 1) throw new Error('voyage_api_origin_meta_ambiguous');
+  return String(html).replace(API_ORIGIN_META_CAPTURE, `$1${origin}$2`);
 }
 
 export async function configurePackagedApiOrigin({ value = process.env.VOYAGE_API_ORIGIN, path = indexPath } = {}) {
