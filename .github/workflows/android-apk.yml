@@ -6,7 +6,9 @@ on:
     branches: [main, feat/**, fix/**]
     paths:
       - 'app/**'
+      - 'src/server.mjs'
       - 'test/android-api-origin-build.test.mjs'
+      - 'test/server-security-headers.test.mjs'
       - '.github/workflows/android-apk.yml'
 
 permissions:
