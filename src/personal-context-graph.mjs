@@ -46,28 +46,44 @@ export function createPersonalContextGraph({ now = Date.now } = {}) {
     },
     history({ userId } = {}) {
       requireText(userId, 'context_user_id_required');
-      return [...entries.values()].filter((e) => e.userId === userId).sort(order).map(structuredClone);
+      return [...entries.values()]
+        .filter((entry) => entry.userId === userId)
+        .map((entry) => structuredClone(entry));
     },
     snapshot({ userId, authorizedConsents = [], at = now() } = {}) {
       requireText(userId, 'context_user_id_required');
       const atMs = asClock(at);
-      const consents = new Set(Array.isArray(authorizedConsents) ? authorizedConsents.map(String) : []);
-      const own = [...entries.values()].filter((e) => e.userId === userId).sort(order);
+      if (!Array.isArray(authorizedConsents)) throw problem('context_consents_invalid');
+      const consents = new Set(authorizedConsents.map((value) => requireText(String(value), 'context_consent_key_invalid')));
+      const own = [...entries.values()].filter((entry) => entry.userId === userId);
       const corrections = new Map();
-      for (const e of own.filter((e) => e.kind === 'CORRECTION')) {
-        const list = corrections.get(e.targetEntryId) || [];
-        list.push(e); corrections.set(e.targetEntryId, list);
+      for (const entry of own.filter((entry) => entry.kind === 'CORRECTION')) {
+        const list = corrections.get(entry.targetEntryId) || [];
+        list.push(entry);
+        corrections.set(entry.targetEntryId, list);
       }
       const items = [];
       let redactedByConsent = 0;
       let rejectedInferences = 0;
-      for (const e of own.filter((e) => e.kind !== 'CORRECTION')) {
-        if (e.consentKey && !consents.has(e.consentKey)) { redactedByConsent += 1; continue; }
-        const materialized = applyCorrections(e, corrections.get(e.id) || [], atMs);
-        if (materialized.inferenceStatus === 'REJECTED') { rejectedInferences += 1; continue; }
+      for (const entry of own.filter((entry) => entry.kind !== 'CORRECTION')) {
+        if (entry.consentKey && !consents.has(entry.consentKey)) {
+          redactedByConsent += 1;
+          continue;
+        }
+        const materialized = applyCorrections(entry, corrections.get(entry.id) || [], atMs);
+        if (materialized.inferenceStatus === 'REJECTED') {
+          rejectedInferences += 1;
+          continue;
+        }
         items.push(materialized);
       }
-      return Object.freeze({ userId, generatedAt: new Date(atMs).toISOString(), items: Object.freeze(items), redactedByConsent, rejectedInferences });
+      return Object.freeze({
+        userId,
+        generatedAt: new Date(atMs).toISOString(),
+        items: Object.freeze(items),
+        redactedByConsent,
+        rejectedInferences
+      });
     }
   });
 }
@@ -129,17 +145,37 @@ function applyCorrections(original, corrections, atMs) {
   let observedAt = original.observedAt;
   let inferenceStatus = original.kind === 'INFERENCE' ? 'PROPOSED' : null;
   const correctionIds = [];
-  for (const c of corrections.sort(order)) {
-    correctionIds.push(c.id);
-    if (c.correctionType === 'VALUE') { value = jsonClone(c.value); sourceRef = c.sourceRef; observedAt = c.observedAt; }
-    if (c.correctionType === 'CONFIRM_INFERENCE') inferenceStatus = 'CONFIRMED';
-    if (c.correctionType === 'REJECT_INFERENCE') inferenceStatus = 'REJECTED';
+  for (const correction of corrections) {
+    correctionIds.push(correction.id);
+    if (correction.correctionType === 'VALUE') {
+      value = jsonClone(correction.value);
+      sourceRef = correction.sourceRef;
+      observedAt = correction.observedAt;
+    }
+    if (correction.correctionType === 'CONFIRM_INFERENCE') inferenceStatus = 'CONFIRMED';
+    if (correction.correctionType === 'REJECT_INFERENCE') inferenceStatus = 'REJECTED';
   }
-  return Object.freeze({ ...original, value, sourceRef, observedAt, inferenceStatus, freshness: freshnessState({ ...original, observedAt }, atMs), correctionIds: Object.freeze(correctionIds) });
+  return Object.freeze({
+    ...original,
+    value,
+    sourceRef,
+    observedAt,
+    inferenceStatus,
+    freshness: freshnessState({ ...original, observedAt }, atMs),
+    correctionIds: Object.freeze(correctionIds)
+  });
 }
 
-function order(a, b) { return Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id); }
-function jsonClone(value) { if (value === undefined) throw problem('context_value_required'); try { return JSON.parse(JSON.stringify(value)); } catch { throw problem('context_value_not_json'); } }
+function jsonClone(value) {
+  if (value === undefined) throw problem('context_value_required');
+  try {
+    const encoded = JSON.stringify(value);
+    if (encoded === undefined) throw new Error('unsupported');
+    return JSON.parse(encoded);
+  } catch {
+    throw problem('context_value_not_json');
+  }
+}
 function normalizeTime(value, code) { return new Date(parseTime(value, code)).toISOString(); }
 function parseTime(value, code) { const ms = Date.parse(value); if (!Number.isFinite(ms)) throw problem(code); return ms; }
 function asClock(value) { const ms = value instanceof Date ? value.getTime() : Number(value); if (!Number.isFinite(ms)) throw problem('context_clock_invalid'); return ms; }
