@@ -38,10 +38,39 @@ test('every response carries the restrictive policy, not only the shell', async 
   }
 });
 
-test('CORS responses vary on Origin so a shared cache cannot cross origins', async () => {
+test('CORS responses vary on Origin and never use wildcard', async () => {
   const received = await headers('development', '/api/v1/config');
   assert.match(String(received.vary || ''), /Origin/i);
   assert.doesNotMatch(String(received['access-control-allow-origin'] || ''), /\*/);
+});
+
+test('same-origin web requests receive the configured web origin', async () => {
+  const origin = urlFor('development');
+  const received = await headers('development', '/api/v1/config', { Origin: origin });
+  assert.equal(received['access-control-allow-origin'], origin);
+});
+
+test('trusted Capacitor origin is allowed explicitly', async () => {
+  const received = await headers('development', '/api/v1/config', { Origin: 'https://localhost' });
+  assert.equal(received['access-control-allow-origin'], 'https://localhost');
+});
+
+test('untrusted origins do not receive an allow-origin header', async () => {
+  const received = await headers('development', '/api/v1/config', { Origin: 'https://attacker.example' });
+  assert.equal(received['access-control-allow-origin'], undefined);
+});
+
+test('preflight from trusted Capacitor origin succeeds with narrow allowlist', async () => {
+  const response = await fetch(`${urlFor('development')}/api/v1/config`, {
+    method: 'OPTIONS',
+    headers: {
+      Origin: 'https://localhost',
+      'Access-Control-Request-Method': 'GET'
+    }
+  });
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://localhost');
+  assert.doesNotMatch(String(response.headers.get('access-control-allow-origin') || ''), /\*/);
 });
 
 test('an authenticated surface stays fail-closed in production without a database', async () => {
@@ -58,8 +87,8 @@ function urlFor(name) {
   return servers.find((entry) => entry.name === name).baseUrl;
 }
 
-async function headers(name, path) {
-  const response = await fetch(`${urlFor(name)}${path}`);
+async function headers(name, path, extraHeaders = {}) {
+  const response = await fetch(`${urlFor(name)}${path}`, { headers: extraHeaders });
   return Object.fromEntries(response.headers.entries());
 }
 
