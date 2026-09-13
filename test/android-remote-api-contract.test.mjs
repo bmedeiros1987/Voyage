@@ -15,11 +15,12 @@ test('packaged API origin accepts only a clean HTTPS origin', () => {
   assert.throws(() => normalizeApiOrigin('https://crewcheck.online?x=1'), /voyage_api_origin_must_be_origin_only/);
 });
 
-test('build-time injection replaces the empty packaged-shell meta without changing the web contract', () => {
+test('build-time injection replaces exactly one packaged-shell meta tag', () => {
   const source = '<meta name="voyage-api-origin" content="" />';
   const configured = injectApiOriginHtml(source, 'https://crewcheck.online');
   assert.equal(configured, '<meta name="voyage-api-origin" content="https://crewcheck.online" />');
   assert.throws(() => injectApiOriginHtml('<html></html>', 'https://crewcheck.online'), /voyage_api_origin_meta_missing/);
+  assert.throws(() => injectApiOriginHtml(`${source}\n${source}`, 'https://crewcheck.online'), /voyage_api_origin_meta_ambiguous/);
 });
 
 test('Android workflow injects and verifies a non-empty API origin before packaging', async () => {
