@@ -7,11 +7,17 @@ const MAX_ID = 160;
 export function createPersonalContextGraph({ now = Date.now } = {}) {
   const entries = new Map();
 
-  function add(input) {
+  function append(input) {
     const entry = normalizeEntry(input, now);
     if (entries.has(entry.id)) throw problem('context_entry_id_conflict', 409);
     entries.set(entry.id, entry);
     return structuredClone(entry);
+  }
+
+  function add(input) {
+    const kind = String(input?.kind || '').trim().toUpperCase();
+    if (kind === 'CORRECTION') throw problem('context_correction_api_required');
+    return append(input);
   }
 
   function targetFor(userId, targetEntryId) {
@@ -27,7 +33,7 @@ export function createPersonalContextGraph({ now = Date.now } = {}) {
     correct({ userId, targetEntryId, value, sourceRef = 'user', observedAt } = {}) {
       const target = targetFor(userId, targetEntryId);
       if (target.kind === 'CORRECTION') throw problem('context_correction_target_invalid');
-      return add({
+      return append({
         kind: 'CORRECTION', userId, key: target.key, value, sourceRef,
         observedAt: observedAt ?? new Date(Number(now())).toISOString(),
         consentKey: target.consentKey, targetEntryId, correctionType: 'VALUE'
@@ -37,7 +43,7 @@ export function createPersonalContextGraph({ now = Date.now } = {}) {
       const target = targetFor(userId, inferenceId);
       if (target.kind !== 'INFERENCE') throw problem('context_inference_target_required');
       if (typeof accepted !== 'boolean') throw problem('context_inference_confirmation_required');
-      return add({
+      return append({
         kind: 'CORRECTION', userId, key: target.key, value: target.value, sourceRef,
         observedAt: observedAt ?? new Date(Number(now())).toISOString(),
         consentKey: target.consentKey, targetEntryId: inferenceId,
