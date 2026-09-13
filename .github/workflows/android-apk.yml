@@ -3,7 +3,7 @@ name: Build Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [main, feat/**]
+    branches: [main, feat/**, fix/**]
     paths:
       - 'app/**'
       - '.github/workflows/android-apk.yml'
@@ -34,8 +34,18 @@ jobs:
         run: npm run android:pdf-share
       - name: Generate Voyage icon and splash assets
         run: npm run android:assets
+      - name: Configure packaged API origin
+        env:
+          VOYAGE_API_ORIGIN: ${{ vars.VOYAGE_API_ORIGIN || 'https://crewcheck.online' }}
+        run: npm run android:api-origin
       - name: Synchronize web assets
         run: npx cap sync android
+      - name: Verify packaged API origin survived sync
+        run: |
+          PACKAGED_INDEX="android/app/src/main/assets/public/index.html"
+          test -f "$PACKAGED_INDEX"
+          grep -q 'name="voyage-api-origin"' "$PACKAGED_INDEX"
+          ! grep -q 'name="voyage-api-origin" content=""' "$PACKAGED_INDEX"
       - name: Verify PDF share target survived sync
         run: |
           grep -q 'android.intent.action.SEND' android/app/src/main/AndroidManifest.xml
