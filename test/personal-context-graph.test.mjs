@@ -45,6 +45,26 @@ test('corrections are append-only and preserve original history', () => {
   assert.equal(effective.correctionIds.length, 1);
 });
 
+test('raw correction injection cannot bypass semantic correction APIs', () => {
+  const g = graph();
+  const fact = g.add({ kind: 'FACT', userId: 'u1', key: 'home.airport', value: 'BSB', sourceRef: 'user', observedAt: iso() });
+  assert.throws(() => g.add({
+    kind: 'CORRECTION',
+    userId: 'u1',
+    key: fact.key,
+    value: fact.value,
+    sourceRef: 'forged',
+    observedAt: iso(),
+    targetEntryId: fact.id,
+    correctionType: 'REJECT_INFERENCE'
+  }), /context_correction_api_required/);
+  assert.throws(() => g.confirmInference({ userId: 'u1', inferenceId: fact.id, accepted: false }), /context_inference_target_required/);
+  const snap = g.snapshot({ userId: 'u1' });
+  assert.equal(snap.items.length, 1);
+  assert.equal(snap.items[0].kind, 'FACT');
+  assert.equal(snap.items[0].value, 'BSB');
+});
+
 test('consent boundaries redact protected context without inferring consent', () => {
   const g = graph();
   g.add({ kind: 'FACT', userId: 'u1', key: 'travel.health.requirement', value: 'document-present', sourceRef: 'official-source', observedAt: iso(), consentKey: 'travelReadiness.health' });
@@ -71,6 +91,7 @@ test('freshness states are explicit and invalid timestamps fail closed', () => {
   assert.equal(snap.items[0].freshness, 'FRESH');
   assert.equal(snap.items[1].freshness, 'EXPIRED');
   assert.equal(freshnessState({ observedAt: iso(-120_000), staleAfterMs: 60_000 }, NOW), 'STALE');
+  assert.equal(freshnessState({ observedAt: iso() }, NOW), 'UNKNOWN');
   assert.throws(() => g.add({ kind: 'FACT', userId: 'u1', key: 'bad', value: true, sourceRef: 'provider', observedAt: 'not-a-date' }), /context_observed_at_invalid/);
   assert.throws(() => g.add({ kind: 'FACT', userId: 'u1', key: 'future', value: true, sourceRef: 'provider', observedAt: iso(120_000) }), /context_observed_at_future/);
 });
