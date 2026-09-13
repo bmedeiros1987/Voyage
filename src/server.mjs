@@ -34,6 +34,7 @@ const MAX_JSON_BYTES = 256 * 1024;
 const MAX_PDF_BYTES = 15 * 1024 * 1024;
 const STATIC_FILES = buildStaticMap();
 const PROPOSAL_PATH_PREFIX = '/api/v1/planner/itinerary/proposals';
+const TRUSTED_CAPACITOR_ORIGINS = new Set(['https://localhost', 'capacitor://localhost']);
 const runtimePersistence = initializeRuntimePersistence();
 const gmailPubSubVerifier = createGmailPubSubVerifier({
   audience: config.google.pubsubConfigured ? config.google.pubsubAudience : null,
@@ -46,7 +47,7 @@ const server = http.createServer(async (req, res) => {
   const path = safePath(req.url);
 
   try {
-    setSecurityHeaders(res, requestId);
+    setSecurityHeaders(req, res, requestId);
     if (path === null) return json(res, 400, { error: 'invalid_request_path', requestId });
     if (req.method === 'OPTIONS') { res.statusCode = 204; res.end(); return; }
     if (await handleCrewCheckIntegrationHttp(req, res, path)) return;
@@ -157,8 +158,8 @@ function buildStaticMap() {
 }
 
 async function serveStatic(res, entry) { const data = await readFile(entry.url); res.statusCode = 200; res.setHeader('Content-Type', entry.contentType); res.setHeader('Content-Length', data.length); res.setHeader('Cache-Control', entry.name === 'service-worker.js' ? 'no-cache' : 'public, max-age=300'); res.end(data); }
-function setSecurityHeaders(res, requestId) { res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY); res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('X-Frame-Options', 'DENY'); res.setHeader('Referrer-Policy', 'no-referrer'); res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()'); res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Request-Id', requestId); if (config.nodeEnv === 'production') res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains'); res.setHeader('Vary', 'Origin'); res.setHeader('Access-Control-Allow-Origin', corsOrigin()); res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Voyage-Filename, X-Voyage-Category, X-Voyage-Provider, X-CrewCheck-Service-Token'); res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); }
-function corsOrigin() { try { return new URL(config.appUrl).origin; } catch { return config.appUrl; } }
+function setSecurityHeaders(req, res, requestId) { res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY); res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('X-Frame-Options', 'DENY'); res.setHeader('Referrer-Policy', 'no-referrer'); res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()'); res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Request-Id', requestId); if (config.nodeEnv === 'production') res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains'); res.setHeader('Vary', 'Origin'); const allowedOrigin = corsOrigin(req); if (allowedOrigin) res.setHeader('Access-Control-Allow-Origin', allowedOrigin); res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Voyage-Filename, X-Voyage-Category, X-Voyage-Provider, X-CrewCheck-Service-Token'); res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); }
+function corsOrigin(req) { const requested = header(req, 'origin'); if (!requested) return null; let webOrigin; try { webOrigin = new URL(config.appUrl).origin; } catch { webOrigin = config.appUrl; } if (requested === webOrigin || TRUSTED_CAPACITOR_ORIGINS.has(requested)) return requested; return null; }
 function json(res, statusCode, payload) { if (res.writableEnded) return; const data = JSON.stringify(payload); res.statusCode = statusCode; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('Content-Length', Buffer.byteLength(data)); res.end(data); }
 async function readJson(req, maxBytes) { const raw = await readRaw(req, maxBytes); if (!raw.length) return {}; try { return JSON.parse(raw.toString('utf8')); } catch { throw namedError('invalid_json'); } }
 async function readRaw(req, maxBytes) { const chunks = []; let size = 0; for await (const chunk of req) { size += chunk.length; if (size > maxBytes) throw namedError('request_body_too_large'); chunks.push(chunk); } return Buffer.concat(chunks); }
