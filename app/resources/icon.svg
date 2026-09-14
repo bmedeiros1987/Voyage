@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">Voyage gold V</title>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="72%">
+      <stop offset="0" stop-color="#14293a"/>
+      <stop offset="0.58" stop-color="#081725"/>
+      <stop offset="1" stop-color="#030a10"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0.08" y1="0.08" x2="0.92" y2="0.9">
+      <stop offset="0" stop-color="#fff2d2"/>
+      <stop offset="0.38" stop-color="#e7c38a"/>
+      <stop offset="0.72" stop-color="#c9944e"/>
+      <stop offset="1" stop-color="#9b672f"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <g fill="url(#gold)">
+    <path d="M190 300 470 356 404 474 263 430Z"/>
+    <path d="M834 300 554 356 620 474 761 430Z"/>
+    <path d="M270 454 486 382 414 598 329 548Z"/>
+    <path d="M754 454 538 382 610 598 695 548Z"/>
+    <path d="M512 405 607 626 512 690 417 626Z"/>
+  </g>
+</svg>

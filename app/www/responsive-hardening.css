@@ -1,0 +1,158 @@
+/* Voyage responsive hardening — loaded last on purpose. */
+html{width:100%;max-width:100%;overflow-x:hidden}
+body{width:100%;max-width:100%;overflow-x:hidden;overscroll-behavior-x:none}
+[hidden]{display:none!important}
+.app-shell{width:100%;max-width:100vw;overflow-x:clip}
+.screen{width:100%;max-width:100%;overflow-x:clip;padding-bottom:calc(118px + var(--safe-bottom))}
+
+/* Prevent long labels, provider names and translated strings from breaking cards. */
+button,input,select,textarea{min-width:0;max-width:100%}
+button{overflow-wrap:anywhere;word-break:normal}
+button span,button strong,button small,button em,
+.feature-row>span,.quick-card>*,.inbox-card>*,.wallet-tile>*,.planner-control>*,
+.topbar>*,.section-heading>*,.hero-card__content>*,.wallet-pass>*{min-width:0}
+
+.button{display:inline-flex;align-items:center;justify-content:center;gap:8px;line-height:1.2;text-align:center;white-space:normal;padding:12px 18px}
+.icon-button{flex:0 0 auto;min-width:44px;max-width:44px;min-height:44px;padding:0;overflow:hidden}
+.text-button{max-width:100%;min-height:44px;line-height:1.25;text-align:left;white-space:normal;display:inline-flex;align-items:center}
+
+.topbar{width:100%;min-width:0}
+.topbar>div:first-child{min-width:0;flex:1 1 auto}
+.topbar h1,.topbar-subtitle,.headline,.supporting,.premium-panel h2,.insight-card h3{overflow-wrap:anywhere}
+.topbar-actions{flex:0 0 auto;min-width:0}
+
+.segmented-control{width:100%;min-width:0;grid-auto-columns:minmax(0,1fr)}
+.segment{min-width:0;min-height:44px;padding-inline:8px;line-height:1.2;white-space:normal}
+
+.hero-card,.trip-cover,.welcome-visual,.premium-panel,.insight-card,.flight-card,.alert-card,
+.voyage-pulse,.quick-card,.inbox-card,.wallet-pass,.wallet-tile,.wallet-readiness,.planner-hero,.planner-control,.day-plan{max-width:100%}
+.hero-card__content{left:18px;right:18px;width:auto}
+.hero-meta,.inbox-meta{flex-wrap:wrap}
+.avatar-stack{max-width:100%;overflow:hidden;padding-right:8px}
+
+.feature-row{grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:11px;min-width:0;min-height:68px;text-align:left}
+.feature-row>span:nth-child(2){min-width:0}
+.feature-row strong,.feature-row small{overflow-wrap:anywhere}
+.feature-row>span:last-child{flex:0 0 auto}
+
+.quick-grid,.wallet-grid,.planner-controls{grid-template-columns:repeat(2,minmax(0,1fr))}
+.quick-card{grid-template-columns:auto minmax(0,1fr) auto}
+.quick-card strong,.quick-card small,.wallet-tile strong,.wallet-tile small{overflow-wrap:anywhere}
+.wallet-tile{grid-template-columns:auto minmax(0,1fr) auto}
+.inbox-card{grid-template-columns:auto minmax(0,1fr) auto}
+
+.wallet-pass__route{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)}
+.wallet-pass__route strong{font-size:clamp(27px,9vw,35px)}
+.wallet-pass__details{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.wallet-pass__details b{overflow-wrap:anywhere}
+.wallet-pass__footer{gap:12px;flex-wrap:wrap}
+.wallet-readiness{grid-template-columns:auto minmax(0,1fr)}
+
+.voyage-pulse__head>*{min-width:0}
+.voyage-pulse__head h2{max-width:none}
+.voyage-pulse__timeline{grid-template-columns:minmax(60px,auto) minmax(18px,1fr) minmax(60px,auto) minmax(18px,1fr) minmax(60px,auto)}
+.pulse-stop{min-width:0}
+.pulse-stop strong{max-width:90px;overflow-wrap:anywhere}
+.pulse-action{gap:10px;text-align:left}
+
+.planner-score{grid-template-columns:repeat(3,minmax(0,1fr))}
+.planner-score span{min-width:0}
+.day-plan article{grid-template-columns:40px 12px minmax(0,1fr) auto}
+.day-plan article>*{min-width:0}
+.day-plan strong,.day-plan small{overflow-wrap:anywhere}
+
+.bottom-nav{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;max-width:calc(100vw - 24px)!important}
+.bottom-nav[hidden]{display:none!important}
+.nav-item{min-width:0!important;min-height:44px!important;width:100%;padding-inline:4px!important;overflow:hidden}
+.nav-item small{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px}
+.nav-icon{line-height:1}
+
+/* Keyboard and switch-access users must get a visible focus affordance without changing pointer styling. */
+:where(button,a,input,select,textarea,[tabindex]):focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+:where(button,a,input,select,textarea,[tabindex]):focus:not(:focus-visible){outline:none}
+@media (forced-colors:active){:where(button,a,input,select,textarea,[tabindex]):focus-visible{outline:3px solid CanvasText}}
+
+.import-screen,.import-stack,.import-panel,.import-dropzone,.import-list,.import-item{min-width:0;max-width:100%}
+.import-panel__head{display:grid;grid-template-columns:auto minmax(0,1fr);min-width:0;max-width:100%}
+.import-panel__head>div:last-child{min-width:0;max-width:100%}
+.import-panel__head h2,.import-panel__head p,.import-dropzone strong,.import-dropzone small{overflow-wrap:anywhere;word-break:normal;max-width:100%}
+.import-item{grid-template-columns:auto minmax(0,1fr) auto!important}
+.import-item strong,.import-item small{overflow-wrap:anywhere}
+.import-item__actions{min-width:0;max-width:100%;justify-items:end}
+.import-category{width:100%;min-height:44px}
+.import-dialog__card{width:min(92vw,560px);max-width:calc(100vw - 24px);max-height:min(88dvh,760px);overflow:auto}
+.import-field-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+
+@media (max-width:520px){
+  .screen:not(.welcome-screen){padding-left:16px!important;padding-right:16px!important;padding-bottom:calc(124px + var(--safe-bottom))!important}
+  .topbar{gap:10px}
+  .topbar h1{font-size:clamp(22px,7vw,27px);line-height:1.08}
+  .trip-cover{margin-left:-16px;margin-right:-16px}
+  .tab-row{margin-left:-16px!important;margin-right:-16px!important;padding-left:16px!important;padding-right:16px!important;gap:14px}
+  .segmented-control{display:flex;overflow-x:auto;scrollbar-width:none;scroll-snap-type:x proximity}
+  .segmented-control::-webkit-scrollbar{display:none}
+  .segment{flex:1 0 auto;min-width:max-content;padding-inline:14px;scroll-snap-align:start}
+  .hero-card{height:clamp(210px,62vw,248px)}
+  .hero-card h2{font-size:clamp(24px,8vw,30px)}
+  .trip-cover__content h1{font-size:clamp(29px,9vw,38px)}
+  .inbox-summary{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .planner-score span{padding:9px 7px}
+  .import-panel{width:100%;max-width:100%;overflow:hidden}
+  .import-dropzone{width:100%;max-width:100%}
+}
+
+@media (max-width:390px){
+  .screen:not(.welcome-screen){padding-left:14px!important;padding-right:14px!important}
+  .welcome-brand{padding-inline:14px}
+  .welcome-visual{margin-inline:12px;border-radius:26px;min-height:270px}
+  .welcome-copy{padding-inline:20px}
+  .welcome-actions{padding-inline:18px}
+  .headline{font-size:clamp(25px,8vw,31px)}
+  .theme-pill{right:10px;max-width:110px}
+  .quick-grid,.wallet-grid,.planner-controls{grid-template-columns:1fr}
+  .quick-card{min-height:76px}
+  .inbox-card{grid-template-columns:auto minmax(0,1fr)}
+  .inbox-card>button{grid-column:2;justify-self:end}
+  .wallet-pass{padding:15px;border-radius:23px}
+  .wallet-pass__route{gap:8px;margin:18px 0}
+  .wallet-pass__details{grid-template-columns:1fr 1fr}
+  .wallet-pass__details span:nth-child(2),.wallet-pass__details span:nth-child(3){text-align:left}
+  .wallet-pass__details span:last-child{grid-column:1/-1}
+  .wallet-readiness{grid-template-columns:1fr;text-align:left}
+  .readiness-ring{width:52px;height:52px}
+  .voyage-pulse{padding:16px;border-radius:22px}
+  .voyage-pulse__head{gap:10px}
+  .live-pill{display:none}
+  .voyage-pulse__timeline{grid-template-columns:1fr;gap:8px;margin-block:16px}
+  .pulse-line{display:none!important}
+  .pulse-stop{grid-template-columns:auto minmax(0,1fr);justify-items:start;text-align:left;align-items:center;min-width:0}
+  .pulse-stop strong{max-width:none}
+  .planner-score{grid-template-columns:1fr}
+  .day-plan article{grid-template-columns:36px 10px minmax(0,1fr)}
+  .day-plan article>em{grid-column:3;justify-self:start;margin-top:4px}
+  .import-panel__head{grid-template-columns:1fr;gap:10px}
+  .import-panel__icon{width:36px;height:36px}
+  .import-item{grid-template-columns:auto minmax(0,1fr)!important}
+  .import-item__actions{grid-column:2;justify-items:start!important;display:flex!important;flex-wrap:wrap;gap:8px}
+  .import-field-grid{grid-template-columns:1fr!important}
+  .bottom-nav{left:8px!important;right:8px!important;max-width:calc(100vw - 16px)!important;padding-inline:3px!important}
+  .nav-item{padding-inline:1px!important}
+  .nav-item small{font-size:8px}
+}
+
+@media (max-width:330px){
+  .nav-item small{display:none}
+  .bottom-nav{min-height:58px}
+  .icon-button{width:44px;height:44px;min-width:44px;max-width:44px}
+  .topbar-actions{gap:5px}
+}
+
+@media (max-height:520px) and (orientation:landscape){
+  .screen:not(.welcome-screen){padding-bottom:calc(96px + var(--safe-bottom))!important}
+  .bottom-nav{min-height:54px!important}
+  .nav-item small{display:none}
+}
+
+@media (min-width:900px){
+  .screen:not(.welcome-screen){max-width:760px!important;padding-left:28px!important;padding-right:28px!important}
+}

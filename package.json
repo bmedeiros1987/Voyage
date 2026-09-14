@@ -1,0 +1,18 @@
+{
+  "name": "voyage-api",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "mysql2": "3.24.3"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node src/server.mjs",
+    "test": "node --test",
+    "lint": "node --check src/server.mjs && node --check src/config.mjs && node --check src/availability.mjs && node --check src/travel-source.mjs && node --check src/import-taxonomy.mjs && node --check src/pdf-ingest.mjs && node --check src/attachment-ingest.mjs && node --check src/travel-provider-parsers.mjs && node --check src/gmail-travel.mjs && node --check src/google-gmail-client.mjs && node --check src/google-oauth.mjs && node --check src/token-crypto.mjs && node --check src/reservation-matcher.mjs && node --check src/trip-planner.mjs && node --check src/planner-brain.mjs && node --check src/weather-intelligence.mjs && node --check src/travel-health-intelligence.mjs && node --check src/civp-guidance.mjs && node --check src/public-health-sources.mjs && node --check src/departure-intelligence.mjs && node --check src/transport-intelligence.mjs && node --check src/airport-connection-intelligence.mjs && node --check src/baggage-intelligence.mjs && node --check src/baggage-passport-intelligence.mjs && node --check src/airport-indoor-navigation.mjs && node --check src/arrival-intelligence.mjs && node --check src/ecosystem-service-router.mjs && node --check src/journey-readiness.mjs && node --check src/journey-command-center.mjs && node --check src/crewcheck-integration.mjs && node --check src/crewcheck-http-integration.mjs && node --check src/intelligence-http.mjs && node --check src/chronological-itinerary.mjs && node --check src/lodging-intelligence.mjs && node --check src/budget-intelligence.mjs && node --check src/awesomeapi-client.mjs && node --check src/travel-data-broker.mjs && node --check src/travel-data-http.mjs && node --check src/dietary-profile.mjs && node --check src/google-maps-portability.mjs && node --check src/auth-provider.mjs && node --check src/auth-session.mjs && node --check src/ecosystem-identity.mjs && node --check src/entitlements.mjs && node --check src/calendar-boundary.mjs && node --check src/itinerary-proposals.mjs && node --check src/persistence.mjs && node --check src/planner-proposal-http.mjs && node --check src/gmail-pubsub-auth.mjs && node --check app/www/api-origin.js && node --check app/www/retention-policy.js && node --check app/www/signature-experience.js && node --check app/www/adaptive-home.js && node --check app/www/native-pdf-share.js && node --check app/www/service-worker.js && node --check app/www/app.js && node --check app/www/import-enhancements.js"
+  }
+}

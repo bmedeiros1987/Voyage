@@ -1,0 +1,53 @@
+name: Voyage CI
+
+on:
+  push:
+    branches: [main, feat/**]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  web-shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify required mobile web files
+        run: |
+          test -f app/www/index.html
+          test -f app/www/styles.css
+          test -f app/www/themes.css
+          test -f app/www/imports.css
+          test -f app/www/app.js
+          test -f app/www/adaptive-home.js
+          test -f app/www/adaptive-home.css
+          test -f app/www/import-enhancements.js
+          test -f app/www/service-worker.js
+          test -f app/capacitor.config.json
+      - name: Syntax-check mobile shell
+        run: |
+          node --check app/www/app.js
+          node --check app/www/adaptive-home.js
+          node --check app/www/import-enhancements.js
+          node --check app/www/service-worker.js
+      - name: Verify offline importer assets are cached
+        run: |
+          grep -q "imports.css" app/www/service-worker.js
+          grep -q "import-enhancements.js" app/www/service-worker.js

@@ -1,0 +1,24 @@
+@import url('./premium-layout.css');
+@import url('./premium-overrides.css');
+
+html[data-theme="light"] .welcome-screen {
+  background: linear-gradient(180deg, #fbf7ef, #efe7db 56%, #f4f0e8);
+}
+
+html[data-theme="light"] .theme-pill {
+  color: var(--text);
+  background: rgba(255,255,255,.68);
+  box-shadow: 0 10px 30px rgba(77,57,29,.08);
+}
+
+@media (prefers-color-scheme: light) {
+  html[data-theme="auto"] .welcome-screen {
+    background: linear-gradient(180deg, #fbf7ef, #efe7db 56%, #f4f0e8);
+  }
+
+  html[data-theme="auto"] .theme-pill {
+    color: var(--text);
+    background: rgba(255,255,255,.68);
+    box-shadow: 0 10px 30px rgba(77,57,29,.08);
+  }
+}
