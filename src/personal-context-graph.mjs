@@ -60,7 +60,7 @@ export function createPersonalContextGraph({ now = Date.now } = {}) {
       requireText(userId, 'context_user_id_required');
       const atMs = asClock(at);
       if (!Array.isArray(authorizedConsents)) throw problem('context_consents_invalid');
-      const consents = new Set(authorizedConsents.map((value) => requireText(String(value), 'context_consent_key_invalid')));
+      const consents = new Set(authorizedConsents.map((value) => requireText(value, 'context_consent_key_invalid')));
       const own = [...entries.values()].filter((entry) => entry.userId === userId);
       const corrections = new Map();
       for (const entry of own.filter((entry) => entry.kind === 'CORRECTION')) {
@@ -128,7 +128,7 @@ function normalizeEntry(input, now) {
     if (!CORRECTIONS.has(correctionType)) throw problem('context_correction_type_invalid');
   }
   return Object.freeze({
-    id: input.id ? requireText(input.id, 'context_entry_id_invalid') : randomUUID(),
+    id: input.id == null ? randomUUID() : requireText(input.id, 'context_entry_id_invalid'),
     userId: requireText(input.userId, 'context_user_id_required'),
     kind,
     key: requireText(input.key, 'context_key_required'),
@@ -174,14 +174,47 @@ function applyCorrections(original, corrections, atMs) {
 
 function jsonClone(value) {
   if (value === undefined) throw problem('context_value_required');
+  assertJsonValue(value);
+  return JSON.parse(JSON.stringify(value));
+}
+
+function assertJsonValue(value, active = new WeakSet()) {
+  if (value === null) return;
+  const type = typeof value;
+  if (type === 'string' || type === 'boolean') return;
+  if (type === 'number') {
+    if (!Number.isFinite(value)) throw problem('context_value_not_json');
+    return;
+  }
+  if (type !== 'object') throw problem('context_value_not_json');
+  if (active.has(value)) throw problem('context_value_not_json');
+  active.add(value);
   try {
-    const encoded = JSON.stringify(value);
-    if (encoded === undefined) throw new Error('unsupported');
-    return JSON.parse(encoded);
-  } catch {
-    throw problem('context_value_not_json');
+    if (Array.isArray(value)) {
+      const keys = Object.keys(value);
+      if (keys.length !== value.length) throw problem('context_value_not_json');
+      for (let index = 0; index < value.length; index += 1) {
+        if (!(index in value) || keys[index] !== String(index)) throw problem('context_value_not_json');
+        assertJsonValue(value[index], active);
+      }
+      return;
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) throw problem('context_value_not_json');
+    if (Object.getOwnPropertySymbols(value).length) throw problem('context_value_not_json');
+    const enumerableKeys = Object.keys(value);
+    const ownNames = Object.getOwnPropertyNames(value);
+    if (enumerableKeys.length !== ownNames.length) throw problem('context_value_not_json');
+    for (const key of enumerableKeys) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) throw problem('context_value_not_json');
+      assertJsonValue(descriptor.value, active);
+    }
+  } finally {
+    active.delete(value);
   }
 }
+
 function normalizeTime(value, code) { return new Date(parseTime(value, code)).toISOString(); }
 function parseTime(value, code) { const ms = Date.parse(value); if (!Number.isFinite(ms)) throw problem(code); return ms; }
 function asClock(value) { const ms = value instanceof Date ? value.getTime() : Number(value); if (!Number.isFinite(ms)) throw problem('context_clock_invalid'); return ms; }
