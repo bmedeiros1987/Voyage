@@ -64,14 +64,28 @@ test('ambiguous protocol-relative request paths cannot resolve to valid routes',
   assert.match(String(health.headers['content-type'] || ''), /application\/json/);
 });
 
-function exactRequest(path) {
+test('CORS reflects only the configured web origin or trusted Capacitor shell origins', async () => {
+  const webOrigin = `http://127.0.0.1:${port}`;
+  for (const origin of [webOrigin, 'https://localhost', 'capacitor://localhost']) {
+    const response = await exactRequest('/api/v1/config', { Origin: origin });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers['access-control-allow-origin'], origin);
+    assert.match(String(response.headers.vary || ''), /Origin/);
+  }
+
+  const untrusted = await exactRequest('/api/v1/config', { Origin: 'https://attacker.example' });
+  assert.equal(untrusted.statusCode, 200);
+  assert.equal(untrusted.headers['access-control-allow-origin'], undefined);
+});
+
+function exactRequest(path, headers = {}) {
   return new Promise((resolve, reject) => {
     const req = request({
       host: '127.0.0.1',
       port,
       method: 'GET',
       path,
-      headers: { Host: `127.0.0.1:${port}` }
+      headers: { Host: `127.0.0.1:${port}`, ...headers }
     }, (res) => {
       let body = '';
       res.setEncoding('utf8');
