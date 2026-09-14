@@ -31,8 +31,6 @@ export function createMysqlTidbExecute({ databaseUrl, driverLoader = defaultMysq
           if (typeof createPool !== 'function') throw namedError('tidb_driver_invalid', 503);
           return createPool({
             ...config,
-            // mysql2 normalizes the TLS options in place, so hand it a mutable
-            // copy: the canonical config stays frozen and unforgeable.
             ssl: { ...config.ssl },
             waitForConnections: true,
             connectionLimit: 10,
@@ -57,11 +55,8 @@ export function parseTidbDatabaseUrl(databaseUrl) {
   if (typeof databaseUrl !== 'string' || !databaseUrl.trim()) throw namedError('tidb_database_url_required', 503);
 
   let parsed;
-  try {
-    parsed = new URL(databaseUrl);
-  } catch {
-    throw namedError('tidb_database_url_invalid', 503);
-  }
+  try { parsed = new URL(databaseUrl); }
+  catch { throw namedError('tidb_database_url_invalid', 503); }
 
   if (!['mysql:', 'mysqls:'].includes(parsed.protocol)) throw namedError('tidb_database_url_invalid', 503);
   if (!parsed.hostname || !parsed.username) throw namedError('tidb_database_url_invalid', 503);
@@ -79,13 +74,15 @@ export function parseTidbDatabaseUrl(databaseUrl) {
   });
 }
 
-async function defaultMysqlDriverLoader() {
-  return import('mysql2/promise');
-}
+async function defaultMysqlDriverLoader() { return import('mysql2/promise'); }
 
 export function createMemoryPersistence() {
   const sessions = new Map();
   const proposals = new Map();
+  const memberships = new Map();
+  const subscriptions = new Map();
+  const consents = new Map();
+
   return Object.freeze({
     kind: 'memory',
     durability: 'ephemeral',
@@ -119,6 +116,30 @@ export function createMemoryPersistence() {
       validateProposalRecord(next);
       proposals.set(proposalId, structuredClone(next));
       return structuredClone(next);
+    },
+    async putMembership(input) {
+      const record = normalizeEcosystemMembership(input);
+      memberships.set(`${record.globalUserId}:${record.product}`, structuredClone(record));
+      return structuredClone(record);
+    },
+    async putSubscription(input) {
+      const record = normalizeProductSubscription(input);
+      subscriptions.set(`${record.globalUserId}:${record.product}`, structuredClone(record));
+      return structuredClone(record);
+    },
+    async setConsent(globalUserId, consentKey, granted, options = {}) {
+      const record = normalizeConsent({ globalUserId, consentKey, granted, ...options });
+      consents.set(`${record.globalUserId}:${record.consentKey}`, structuredClone(record));
+      return structuredClone(record);
+    },
+    async getEcosystemProfile(globalUserId) {
+      requireId(globalUserId, 'global_user_id_required');
+      const byUser = (record) => record.globalUserId === globalUserId;
+      return {
+        memberships: [...memberships.values()].filter(byUser).map(membershipForIdentity),
+        subscriptions: [...subscriptions.values()].filter(byUser).map(subscriptionForEntitlements),
+        consents: [...consents.values()].filter(byUser).map((record) => structuredClone(record))
+      };
     }
   });
 }
@@ -161,7 +182,7 @@ export function createTidbPersistence({ execute } = {}) {
     },
     async getProposal(proposalId) {
       const [rows] = await execute(
-        `SELECT id,trip_id AS tripId,created_by_user_id AS createdByUserId,base_version AS baseVersion,proposal_version AS version,status,changes_json AS changesJson,created_at AS createdAt,expires_at AS expiresAt,approved_by_user_id AS approvedByUserId,approved_at AS approvedAt
+        `SELECT id,trip_id AS tripId,created_by_user_id AS createdByUserId,base_version AS baseVersion,status,proposal_version AS version,changes_json AS changesJson,created_at AS createdAt,expires_at AS expiresAt,approved_by_user_id AS approvedByUserId,approved_at AS approvedAt
            FROM itinerary_proposals WHERE id=? LIMIT 1`,
         [proposalId]
       );
@@ -180,6 +201,72 @@ export function createTidbPersistence({ execute } = {}) {
       );
       if (Number(result?.affectedRows || 0) !== 1) throw namedError('proposal_concurrent_update', 409);
       return next;
+    },
+    async putMembership(input) {
+      const record = normalizeEcosystemMembership(input);
+      await execute(
+        `INSERT INTO ecosystem_identities (global_user_id) VALUES (?)
+         ON DUPLICATE KEY UPDATE updated_at=CURRENT_TIMESTAMP(3), deleted_at=NULL`,
+        [record.globalUserId]
+      );
+      await execute(
+        `INSERT INTO ecosystem_memberships (global_user_id,product,state,verified_by_product,product_account_id,crew_role,linked_at,deleted_at)
+         VALUES (?,?,?,?,?,?,?,NULL)
+         ON DUPLICATE KEY UPDATE state=VALUES(state), verified_by_product=VALUES(verified_by_product), product_account_id=VALUES(product_account_id), crew_role=VALUES(crew_role), linked_at=VALUES(linked_at), updated_at=CURRENT_TIMESTAMP(3), deleted_at=NULL`,
+        [record.globalUserId, record.product, record.state, record.verifiedByProduct, record.productAccountId, record.crewRole, nullableSqlDate(record.linkedAt)]
+      );
+      return structuredClone(record);
+    },
+    async putSubscription(input) {
+      const record = normalizeProductSubscription(input);
+      await execute(
+        `INSERT INTO product_subscriptions (global_user_id,product,state,renews_at,source)
+         VALUES (?,?,?,?,?)
+         ON DUPLICATE KEY UPDATE state=VALUES(state), renews_at=VALUES(renews_at), source=VALUES(source), updated_at=CURRENT_TIMESTAMP(3)`,
+        [record.globalUserId, record.product, record.state, nullableSqlDate(record.renewsAt), record.source]
+      );
+      return structuredClone(record);
+    },
+    async setConsent(globalUserId, consentKey, granted, options = {}) {
+      const record = normalizeConsent({ globalUserId, consentKey, granted, ...options });
+      await execute(
+        `INSERT INTO user_consents (global_user_id,consent_key,granted,granted_at,revoked_at,source)
+         VALUES (?,?,?,?,?,?)
+         ON DUPLICATE KEY UPDATE granted=VALUES(granted), granted_at=VALUES(granted_at), revoked_at=VALUES(revoked_at), source=VALUES(source), updated_at=CURRENT_TIMESTAMP(3)`,
+        [record.globalUserId, record.consentKey, record.granted, record.granted ? toSqlDate(record.updatedAt) : null, record.granted ? null : toSqlDate(record.updatedAt), record.source]
+      );
+      return structuredClone(record);
+    },
+    async getEcosystemProfile(globalUserId) {
+      requireId(globalUserId, 'global_user_id_required');
+      const [membershipRows] = await execute(
+        `SELECT product,state,verified_by_product AS verifiedByProduct,product_account_id AS productAccountId,crew_role AS crewRole,linked_at AS linkedAt
+           FROM ecosystem_memberships WHERE global_user_id=? AND deleted_at IS NULL`,
+        [globalUserId]
+      );
+      const [subscriptionRows] = await execute(
+        `SELECT product,state,renews_at AS renewsAt FROM product_subscriptions WHERE global_user_id=?`,
+        [globalUserId]
+      );
+      const [consentRows] = await execute(
+        `SELECT consent_key AS consentKey,granted,updated_at AS updatedAt,source FROM user_consents WHERE global_user_id=?`,
+        [globalUserId]
+      );
+      return {
+        memberships: (Array.isArray(membershipRows) ? membershipRows : []).map((row) => membershipForIdentity({
+          globalUserId, product: row.product, state: row.state, verifiedByProduct: Boolean(row.verifiedByProduct),
+          productAccountId: row.productAccountId || null, crewRole: row.crewRole || null,
+          linkedAt: row.linkedAt ? new Date(row.linkedAt).toISOString() : null
+        })),
+        subscriptions: (Array.isArray(subscriptionRows) ? subscriptionRows : []).map((row) => ({
+          product: String(row.product), state: String(row.state), renewsAt: row.renewsAt ? new Date(row.renewsAt).toISOString() : null
+        })),
+        consents: (Array.isArray(consentRows) ? consentRows : []).map((row) => ({
+          consentKey: String(row.consentKey), granted: Boolean(row.granted),
+          updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : null,
+          source: row.source ? String(row.source) : null
+        }))
+      };
     }
   });
 }
@@ -196,6 +283,62 @@ export function newSessionRecord({ userId, tokenFingerprint, issuedAt, expiresAt
   };
   validateSessionRecord(record);
   return Object.freeze(record);
+}
+
+function normalizeEcosystemMembership(input = {}) {
+  requireId(input.globalUserId, 'global_user_id_required');
+  const product = String(input.product || '').toUpperCase();
+  if (!['VOYAGE', 'CREWCHECK'].includes(product)) throw namedError('membership_product_invalid');
+  const verifiedByProduct = input.verifiedByProduct === true;
+  const active = verifiedByProduct && input.active === true;
+  const seen = input.seen === true || verifiedByProduct;
+  const state = active ? 'ACTIVE' : seen ? 'VISITOR' : 'NONE';
+  return Object.freeze({
+    globalUserId: String(input.globalUserId), product, state, active, seen, verifiedByProduct,
+    productAccountId: input.productAccountId ? String(input.productAccountId).slice(0, 190) : null,
+    crewRole: product === 'CREWCHECK' && active && input.crewRole ? String(input.crewRole).toUpperCase().slice(0, 40) : null,
+    linkedAt: input.linkedAt ? normalizeIso(input.linkedAt) : null
+  });
+}
+
+function membershipForIdentity(record) {
+  return {
+    product: record.product,
+    active: record.state === 'ACTIVE',
+    seen: record.state !== 'NONE',
+    verifiedByProduct: record.verifiedByProduct === true,
+    productAccountId: record.productAccountId || null,
+    crewRole: record.crewRole || null,
+    linkedAt: record.linkedAt || null
+  };
+}
+
+function normalizeProductSubscription(input = {}) {
+  requireId(input.globalUserId, 'global_user_id_required');
+  const product = String(input.product || '').toUpperCase();
+  const state = String(input.state || 'NONE').toUpperCase();
+  if (!['VOYAGE', 'CREWCHECK'].includes(product)) throw namedError('subscription_product_invalid');
+  if (!['ACTIVE', 'GRACE', 'EXPIRED', 'NONE'].includes(state)) throw namedError('subscription_state_invalid');
+  return Object.freeze({
+    globalUserId: String(input.globalUserId), product, state,
+    renewsAt: input.renewsAt ? normalizeIso(input.renewsAt) : null,
+    source: input.source ? String(input.source).slice(0, 64) : null
+  });
+}
+
+function subscriptionForEntitlements(record) {
+  return { product: record.product, state: record.state, renewsAt: record.renewsAt || null };
+}
+
+function normalizeConsent(input = {}) {
+  requireId(input.globalUserId, 'global_user_id_required');
+  requireId(input.consentKey, 'consent_key_required');
+  if (typeof input.granted !== 'boolean') throw namedError('consent_granted_boolean_required');
+  const updatedAt = input.changedAt ? normalizeIso(input.changedAt) : new Date().toISOString();
+  return Object.freeze({
+    globalUserId: String(input.globalUserId), consentKey: String(input.consentKey), granted: input.granted,
+    updatedAt, source: input.source ? String(input.source).slice(0, 64) : null
+  });
 }
 
 function validateSessionRecord(record) {
