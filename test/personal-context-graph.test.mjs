@@ -72,6 +72,7 @@ test('consent boundaries redact protected context without inferring consent', ()
   assert.equal(g.snapshot({ userId: 'u1' }).redactedByConsent, 1);
   const allowed = g.snapshot({ userId: 'u1', authorizedConsents: ['travelReadiness.health'] });
   assert.equal(allowed.items.length, 1);
+  assert.throws(() => g.snapshot({ userId: 'u1', authorizedConsents: [123] }), /context_consent_key_invalid/);
 });
 
 test('user isolation blocks reads and corrections across users', () => {
@@ -94,4 +95,17 @@ test('freshness states are explicit and invalid timestamps fail closed', () => {
   assert.equal(freshnessState({ observedAt: iso() }, NOW), 'UNKNOWN');
   assert.throws(() => g.add({ kind: 'FACT', userId: 'u1', key: 'bad', value: true, sourceRef: 'provider', observedAt: 'not-a-date' }), /context_observed_at_invalid/);
   assert.throws(() => g.add({ kind: 'FACT', userId: 'u1', key: 'future', value: true, sourceRef: 'provider', observedAt: iso(120_000) }), /context_observed_at_future/);
+});
+
+test('context values fail closed instead of being silently coerced by JSON serialization', () => {
+  const g = graph();
+  const base = { kind: 'FACT', userId: 'u1', key: 'context.test', sourceRef: 'user', observedAt: iso() };
+  assert.throws(() => g.add({ ...base, value: Number.NaN }), /context_value_not_json/);
+  assert.throws(() => g.add({ ...base, value: Number.POSITIVE_INFINITY }), /context_value_not_json/);
+  assert.throws(() => g.add({ ...base, value: { nested: undefined } }), /context_value_not_json/);
+  assert.throws(() => g.add({ ...base, value: new Date(NOW) }), /context_value_not_json/);
+  assert.throws(() => g.add({ ...base, value: [, 'x'] }), /context_value_not_json/);
+  assert.throws(() => g.add({ ...base, id: '', value: 'x' }), /context_entry_id_invalid/);
+  const valid = g.add({ ...base, value: { nested: [1, true, null, 'ok'] } });
+  assert.deepEqual(valid.value, { nested: [1, true, null, 'ok'] });
 });
