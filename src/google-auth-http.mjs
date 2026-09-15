@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { buildGoogleAuthorizationUrl, createSignedOAuthState, exchangeGoogleAuthorizationCode, verifySignedOAuthState } from './google-oauth.mjs';
 import { createSessionToken, persistIssuedSession } from './auth-session.mjs';
 import { encryptSecret } from './token-crypto.mjs';
@@ -7,6 +8,8 @@ const CALLBACK_PATH = '/api/v1/auth/google/callback';
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const USERINFO_ENDPOINT = 'https://openidconnect.googleapis.com/v1/userinfo';
 const CONSENT_POLICY_VERSION = '2026-09';
+const STATE_COOKIE = 'voyage_oauth_state';
+const STATE_TTL_SECONDS = 600;
 
 export async function handleGoogleAuthHttp(req, res, path, { config, persistence, fetchImpl = fetch } = {}) {
   if (req?.method !== 'GET' || (path !== START_PATH && path !== CALLBACK_PATH)) return false;
@@ -17,7 +20,8 @@ export async function handleGoogleAuthHttp(req, res, path, { config, persistence
     const purpose = normalizePurpose(requestUrl.searchParams.get('purpose'));
     if (purpose === 'gmail' && !config.google.gmailConfigured) throw namedError('google_oauth_not_configured', 503);
 
-    const state = createSignedOAuthState({ purpose }, config.session.signingKey, { ttlSeconds: 600 });
+    const state = createSignedOAuthState({ purpose }, config.session.signingKey, { ttlSeconds: STATE_TTL_SECONDS });
+    setStateCookie(res, fingerprintState(state));
     const authorizationUrl = buildGoogleAuthorizationUrl({
       clientId: config.google.clientId,
       redirectUri: config.google.redirectUri,
@@ -30,6 +34,10 @@ export async function handleGoogleAuthHttp(req, res, path, { config, persistence
   }
 
   const requestUrl = new URL(req.url, 'http://localhost');
+  const state = requestUrl.searchParams.get('state');
+  verifyBrowserState(req, state);
+  clearStateCookie(res);
+
   const providerError = requestUrl.searchParams.get('error');
   if (providerError) {
     redirect(res, appReturnUrl(config.appUrl, { oauth_error: safeProviderError(providerError) }));
@@ -37,7 +45,6 @@ export async function handleGoogleAuthHttp(req, res, path, { config, persistence
   }
 
   const code = requestUrl.searchParams.get('code');
-  const state = requestUrl.searchParams.get('state');
   if (!code) throw namedError('oauth_code_required');
   const statePayload = verifySignedOAuthState(state, config.session.signingKey);
   const purpose = normalizePurpose(statePayload.purpose);
@@ -119,6 +126,41 @@ function appReturnUrl(appUrl, fragment = {}) {
   const url = new URL(appUrl);
   url.hash = new URLSearchParams(fragment).toString();
   return url.toString();
+}
+
+function fingerprintState(state) {
+  return createHash('sha256').update(String(state || '')).digest('base64url');
+}
+
+function verifyBrowserState(req, state) {
+  if (typeof state !== 'string' || !state) throw namedError('oauth_state_required');
+  const expected = readCookie(req, STATE_COOKIE);
+  if (!expected) throw namedError('oauth_state_browser_mismatch', 400);
+  const actual = fingerprintState(state);
+  const left = Buffer.from(expected);
+  const right = Buffer.from(actual);
+  if (left.length !== right.length || !timingSafeEqual(left, right)) throw namedError('oauth_state_browser_mismatch', 400);
+}
+
+function readCookie(req, name) {
+  const raw = Array.isArray(req?.headers?.cookie) ? req.headers.cookie[0] : req?.headers?.cookie;
+  if (typeof raw !== 'string') return null;
+  for (const pair of raw.split(';')) {
+    const index = pair.indexOf('=');
+    if (index < 0) continue;
+    const key = pair.slice(0, index).trim();
+    if (key !== name) continue;
+    try { return decodeURIComponent(pair.slice(index + 1).trim()); } catch { return null; }
+  }
+  return null;
+}
+
+function setStateCookie(res, value) {
+  res.setHeader('Set-Cookie', `${STATE_COOKIE}=${encodeURIComponent(value)}; Path=${CALLBACK_PATH}; Max-Age=${STATE_TTL_SECONDS}; HttpOnly; Secure; SameSite=Lax`);
+}
+
+function clearStateCookie(res) {
+  res.setHeader('Set-Cookie', `${STATE_COOKIE}=; Path=${CALLBACK_PATH}; Max-Age=0; HttpOnly; Secure; SameSite=Lax`);
 }
 
 function safeProviderError(value) {
