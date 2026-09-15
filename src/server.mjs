@@ -14,6 +14,8 @@ import { handleCrewCheckIntegrationHttp } from './crewcheck-http-integration.mjs
 import { handlePlannerProposalHttp } from './planner-proposal-http.mjs';
 import { createRuntimePersistence } from './persistence.mjs';
 import { createGmailPubSubVerifier } from './gmail-pubsub-auth.mjs';
+import { handleGoogleAuthHttp } from './google-auth-http.mjs';
+import { authenticatePersistedSession } from './auth-session.mjs';
 
 const config = getRuntimeConfig();
 const CONTENT_SECURITY_POLICY = [
@@ -34,6 +36,7 @@ const MAX_JSON_BYTES = 256 * 1024;
 const MAX_PDF_BYTES = 15 * 1024 * 1024;
 const STATIC_FILES = buildStaticMap();
 const PROPOSAL_PATH_PREFIX = '/api/v1/planner/itinerary/proposals';
+const GOOGLE_AUTH_PATH_PREFIX = '/api/v1/auth/google/';
 const runtimePersistence = initializeRuntimePersistence();
 const gmailPubSubVerifier = createGmailPubSubVerifier({
   audience: config.google.pubsubConfigured ? config.google.pubsubAudience : null,
@@ -51,6 +54,14 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') { res.statusCode = 204; res.end(); return; }
     if (await handleCrewCheckIntegrationHttp(req, res, path)) return;
 
+    if (path.startsWith(GOOGLE_AUTH_PATH_PREFIX)) {
+      if (runtimePersistence.error) throw runtimePersistence.error;
+      if (await handleGoogleAuthHttp(req, res, path, {
+        config,
+        persistence: runtimePersistence.persistence
+      })) return;
+    }
+
     if (path === PROPOSAL_PATH_PREFIX || path.startsWith(`${PROPOSAL_PATH_PREFIX}/`)) {
       if (runtimePersistence.error) throw runtimePersistence.error;
       if (await handlePlannerProposalHttp(req, res, path, {
@@ -63,7 +74,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         status: 'ok', service: 'voyage-api', app: config.appName, environment: config.nodeEnv,
         database: config.databaseConfigured ? 'configured' : 'not_configured',
-        googleLogin: config.google.loginConfigured ? 'configured' : 'not_configured',
+        googleLogin: config.google.loginConfigured && config.google.redirectConfigured ? 'configured' : 'not_configured',
         gmail: config.google.gmailConfigured ? 'configured' : 'not_configured',
         crewCheckIntegration: config.sharedCrewCheck.configured ? 'configured' : 'not_configured',
         universalImporter: 'enabled', automaticTripPlanner: 'enabled', plannerBrain: 'enabled',
@@ -71,11 +82,16 @@ const server = http.createServer(async (req, res) => {
       });
     }
     if (req.method === 'GET' && path === '/api/v1/config') return json(res, 200, publicConfig(config));
-    if (req.method === 'GET' && path === '/api/v1/auth/google/status') return json(res, 200, { enabled: config.google.loginConfigured, scopes: ['openid', 'email', 'profile'], principle: 'Google Login is isolated from Gmail authorization.' });
+    if (req.method === 'GET' && path === '/api/v1/auth/google/status') return json(res, 200, {
+      enabled: config.google.loginConfigured && config.google.redirectConfigured,
+      gmailEnabled: config.google.gmailConfigured,
+      scopes: ['openid', 'email', 'profile'],
+      principle: 'Google Login is isolated from Gmail authorization.'
+    });
     if (req.method === 'GET' && path === '/api/v1/imports/capabilities') return json(res, 200, { ...supportedImportCapabilities(), pdfTextExtraction: 'best_effort_machine_readable_pdf', scannedPdfPolicy: 'Accept the file and mark NEEDS_REVIEW until OCR is available.', unknownDocumentPolicy: 'Import as OTHER rather than silently discarding.' });
     if (req.method === 'POST' && path === '/api/v1/imports/pdf') { requireContentType(req, 'application/pdf'); const body = await readRaw(req, MAX_PDF_BYTES); return json(res, 200, ingestPdfBuffer(body, { fileName: header(req, 'x-voyage-filename') || 'document.pdf', categoryHint: header(req, 'x-voyage-category') || null, provider: header(req, 'x-voyage-provider') || 'manual_pdf' })); }
     if (req.method === 'POST' && path === '/api/v1/imports/manual/preview') { const body = await readJson(req, MAX_JSON_BYTES); const classification = body.category || 'OTHER'; const userConfirmed = body.confirmedByUser === true; return json(res, 200, { importId: randomUUID(), status: userConfirmed ? 'PARSED' : 'NEEDS_REVIEW', source: 'manual', document: { category: classification, title: String(body.title || 'Item da viagem').slice(0, 220), provider: body.provider ? String(body.provider).slice(0, 160) : null, confirmationCode: body.confirmationCode ? String(body.confirmationCode).slice(0, 120) : null, startsAt: body.startsAt || null, endsAt: body.endsAt || null, location: body.location ? String(body.location).slice(0, 300) : null, notes: body.notes ? String(body.notes).slice(0, 2000) : null, confirmedByUser: userConfirmed }, review: userConfirmed ? { required: false, reasons: [] } : { required: true, reasons: ['MANUAL_CONFIRMATION_REQUIRED'] } }); }
-    if (req.method === 'GET' && path === '/api/v1/integrations/gmail/status') return json(res, 200, { enabled: config.google.gmailConfigured, pushSyncEnabled: config.google.gmailConfigured && config.google.pubsubConfigured, requestedScope: 'https://www.googleapis.com/auth/gmail.readonly', discoveryQuery: buildGmailDiscoveryQuery(), contract: gmailRealtimeContract(), storagePolicy: 'Store structured travel facts; avoid long-term retention of irrelevant message bodies.' });
+    if (req.method === 'GET' && path === '/api/v1/integrations/gmail/status') return json(res, 200, await buildGmailStatus(req));
     if (req.method === 'POST' && path === '/api/v1/integrations/gmail/message/preview') return json(res, 200, classifyGmailCandidate(await readJson(req, MAX_JSON_BYTES)));
     if (req.method === 'POST' && path === '/api/v1/integrations/gmail/pubsub') { const push = await gmailPubSubVerifier.verifyRequest(req); const body = await readJson(req, MAX_JSON_BYTES); const notification = parseGmailPubSubEnvelope(body); if (!gmailPubSubVerifier.registerDelivery(notification.messageId)) return json(res, 202, { accepted: true, duplicate: true, notification, action: 'IGNORED_REPLAYED_DELIVERY' }); return json(res, 202, { accepted: true, duplicate: false, verifiedPushSubject: push.email || push.subject, notification, action: config.google.gmailConfigured ? 'PROCESS_GMAIL_HISTORY' : 'DEFER_UNTIL_GMAIL_CONFIGURED' }); }
     if (req.method === 'POST' && path === '/api/v1/trips/graph/preview') { const body = await readJson(req, MAX_JSON_BYTES); const reservations = Array.isArray(body.reservations) ? body.reservations.slice(0, 200) : []; const incoming = body.incoming && typeof body.incoming === 'object' ? body.incoming : null; return json(res, 200, { graph: buildTripGraph(reservations), reservationMatch: incoming ? matchReservation(reservations, incoming) : null, tripSuggestion: incoming && Array.isArray(body.trips) ? suggestTripForReservation(body.trips.slice(0, 100), incoming) : null }); }
@@ -112,6 +128,28 @@ server.listen(config.port, '0.0.0.0', () => console.log(JSON.stringify({ level: 
 function initializeRuntimePersistence() {
   try { return { persistence: createRuntimePersistence({ nodeEnv: config.nodeEnv, databaseConfigured: config.databaseConfigured }), error: null }; }
   catch (error) { if (!Number.isInteger(error?.statusCode)) error.statusCode = 503; console.error(JSON.stringify({ level: 'error', event: 'persistence_unavailable', errorCode: error?.code || 'persistence_unavailable' })); return { persistence: null, error }; }
+}
+
+async function buildGmailStatus(req) {
+  const base = {
+    enabled: config.google.gmailConfigured,
+    connected: false,
+    pushSyncEnabled: false,
+    requestedScope: 'https://www.googleapis.com/auth/gmail.readonly',
+    discoveryQuery: buildGmailDiscoveryQuery(),
+    contract: gmailRealtimeContract(),
+    storagePolicy: 'Store structured travel facts; avoid long-term retention of irrelevant message bodies.'
+  };
+  if (!config.google.gmailConfigured || runtimePersistence.error || !runtimePersistence.persistence) return base;
+  try {
+    const session = await authenticatePersistedSession(req, config.session.signingKey, runtimePersistence.persistence);
+    const connection = await runtimePersistence.persistence.getGoogleConnectionByUserId(session.userId);
+    const connected = Boolean(connection && connection.status === 'CONNECTED' && connection.encryptedRefreshToken);
+    return { ...base, connected, pushSyncEnabled: connected && config.google.pubsubConfigured };
+  } catch (error) {
+    if (['authentication_required', 'authentication_invalid', 'session_expired', 'session_not_found', 'session_revoked'].includes(error?.message)) return base;
+    throw error;
+  }
 }
 
 function buildStaticMap() {
@@ -166,6 +204,6 @@ function requireContentType(req, expected) { const contentType = String(req.head
 function header(req, name) { const value = req.headers[name]; return Array.isArray(value) ? value[0] : value ? String(value) : null; }
 function safePath(url = '/') { if (typeof url !== 'string' || !url.startsWith('/') || url.startsWith('//')) return null; let pathname; try { pathname = new URL(url, 'http://localhost').pathname; } catch { return null; } if (!pathname.startsWith('/') || pathname.startsWith('//')) return null; return pathname; }
 function namedError(message) { const error = new Error(message); error.code = message; return error; }
-function publicErrorCode(error) { const known = new Set(['request_body_too_large','invalid_json','unsupported_content_type','pdf_buffer_required','empty_pdf','pdf_too_large','invalid_pdf_signature','gmail_pubsub_message_data_required','gmail_pubsub_data_invalid','gmail_pubsub_payload_incomplete','crewcheck_bridge_body_too_large','crewcheck_bridge_invalid_json','authentication_not_configured','authentication_required','authentication_invalid','session_expired','session_not_found','session_revoked','proposal_id_invalid','production_persistence_required','tidb_execute_required','gmail_pubsub_not_configured','pubsub_authentication_required','pubsub_token_invalid','pubsub_token_algorithm_unsupported','pubsub_token_kid_missing','pubsub_token_issuer_invalid','pubsub_token_audience_invalid','pubsub_token_expired','pubsub_token_not_yet_valid','pubsub_token_subject_invalid','pubsub_token_key_unknown','pubsub_token_signature_invalid','pubsub_jwks_unavailable']); return known.has(error?.message) ? error.message : 'internal_error'; }
+function publicErrorCode(error) { const known = new Set(['request_body_too_large','invalid_json','unsupported_content_type','pdf_buffer_required','empty_pdf','pdf_too_large','invalid_pdf_signature','gmail_pubsub_message_data_required','gmail_pubsub_data_invalid','gmail_pubsub_payload_incomplete','crewcheck_bridge_body_too_large','crewcheck_bridge_invalid_json','authentication_not_configured','authentication_required','authentication_invalid','session_expired','session_not_found','session_revoked','proposal_id_invalid','production_persistence_required','tidb_execute_required','gmail_pubsub_not_configured','pubsub_authentication_required','pubsub_token_invalid','pubsub_token_algorithm_unsupported','pubsub_token_kid_missing','pubsub_token_issuer_invalid','pubsub_token_audience_invalid','pubsub_token_expired','pubsub_token_not_yet_valid','pubsub_token_subject_invalid','pubsub_token_key_unknown','pubsub_token_signature_invalid','pubsub_jwks_unavailable','google_oauth_not_configured','oauth_code_required','oauth_state_required','oauth_state_invalid','oauth_state_signature_invalid','oauth_state_expired','google_access_token_required','google_userinfo_subject_required','gmail_scope_not_granted','identity_link_confirmation_required','google_connection_owner_mismatch','google_refresh_token_required','google_scopes_required','oauth_consent_scopes_required']); const message = error?.message; if (known.has(message)) return message; if (/^google_token_\d+$/.test(message || '')) return 'google_token_exchange_failed'; if (/^google_userinfo_\d+$/.test(message || '')) return 'google_userinfo_failed'; return 'internal_error'; }
 function statusForError(error) { if (Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 600) return error.statusCode; if (['request_body_too_large','pdf_too_large','crewcheck_bridge_body_too_large'].includes(error?.message)) return 413; if (['unsupported_content_type'].includes(error?.message)) return 415; if (publicErrorCode(error) !== 'internal_error') return 400; return 500; }
 function demoTrips() { return { trips: [{ id: 'demo-italia-2027', title: 'Itália 2027', subtitle: 'Roma · Florença · Milão', startDate: '2027-05-12', endDate: '2027-05-24', participants: 6, status: 'PLANNING', cover: 'italy' },{ id: 'demo-new-york-2025', title: 'Nova York', subtitle: 'Manhattan', startDate: '2025-10-15', endDate: '2025-10-22', participants: 2, status: 'CONFIRMED', cover: 'new-york' }] }; }
