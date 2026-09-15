@@ -31,8 +31,6 @@ export function createMysqlTidbExecute({ databaseUrl, driverLoader = defaultMysq
           if (typeof createPool !== 'function') throw namedError('tidb_driver_invalid', 503);
           return createPool({
             ...config,
-            // mysql2 normalizes the TLS options in place, so hand it a mutable
-            // copy: the canonical config stays frozen and unforgeable.
             ssl: { ...config.ssl },
             waitForConnections: true,
             connectionLimit: 10,
@@ -86,6 +84,11 @@ async function defaultMysqlDriverLoader() {
 export function createMemoryPersistence() {
   const sessions = new Map();
   const proposals = new Map();
+  const users = new Map();
+  const identities = new Map();
+  const googleConnections = new Map();
+  const oauthConsents = new Map();
+
   return Object.freeze({
     kind: 'memory',
     durability: 'ephemeral',
@@ -102,6 +105,63 @@ export function createMemoryPersistence() {
       if (!current) return false;
       sessions.set(sessionId, { ...current, revokedAt });
       return true;
+    },
+    async upsertGoogleIdentity(input) {
+      const identity = normalizeGoogleIdentityInput(input);
+      const identityKey = `GOOGLE:${identity.googleSubject}`;
+      const existingIdentity = identities.get(identityKey);
+      if (existingIdentity) {
+        const current = users.get(existingIdentity.userId);
+        const next = {
+          ...current,
+          email: identity.email || current?.email || null,
+          displayName: identity.displayName || current?.displayName || null,
+          avatarUrl: identity.avatarUrl || current?.avatarUrl || null
+        };
+        users.set(existingIdentity.userId, next);
+        identities.set(identityKey, { ...existingIdentity, providerEmail: identity.email || existingIdentity.providerEmail || null });
+        return structuredClone({ userId: existingIdentity.userId, ...next });
+      }
+      if (identity.email) {
+        const collision = [...users.values()].find((user) => user.email && user.email.toLowerCase() === identity.email.toLowerCase());
+        if (collision) throw namedError('identity_link_confirmation_required', 409);
+      }
+      const userId = randomUUID();
+      const user = { userId, email: identity.email, displayName: identity.displayName, avatarUrl: identity.avatarUrl };
+      users.set(userId, user);
+      identities.set(identityKey, { userId, provider: 'GOOGLE', providerSubject: identity.googleSubject, providerEmail: identity.email });
+      return structuredClone(user);
+    },
+    async upsertGoogleConnection(input) {
+      const connection = normalizeGoogleConnectionInput(input);
+      const existing = googleConnections.get(connection.googleSubject);
+      if (existing && existing.userId !== connection.userId) throw namedError('google_connection_owner_mismatch', 409);
+      const encryptedRefreshToken = connection.encryptedRefreshToken || existing?.encryptedRefreshToken || null;
+      const tokenKeyVersion = connection.tokenKeyVersion || existing?.tokenKeyVersion || null;
+      if (!encryptedRefreshToken) throw namedError('google_refresh_token_required', 409);
+      const next = {
+        userId: connection.userId,
+        googleSubject: connection.googleSubject,
+        encryptedRefreshToken,
+        tokenKeyVersion,
+        grantedScopes: connection.grantedScopes,
+        status: 'CONNECTED',
+        connectedAt: existing?.connectedAt || new Date().toISOString(),
+        revokedAt: null
+      };
+      googleConnections.set(connection.googleSubject, next);
+      return structuredClone(next);
+    },
+    async getGoogleConnectionByUserId(userId) {
+      requireId(userId, 'google_connection_user_required');
+      const match = [...googleConnections.values()].find((entry) => entry.userId === userId && entry.status === 'CONNECTED' && !entry.revokedAt);
+      return match ? structuredClone(match) : null;
+    },
+    async recordOAuthConsent(input) {
+      const consent = normalizeOAuthConsentInput(input);
+      const record = { id: randomUUID(), ...consent, grantedAt: new Date().toISOString(), revokedAt: null };
+      oauthConsents.set(record.id, record);
+      return structuredClone(record);
     },
     async createProposal(proposal) {
       validateProposalRecord(proposal);
@@ -149,6 +209,100 @@ export function createTidbPersistence({ execute } = {}) {
     async revokeSession(sessionId, revokedAt = new Date().toISOString()) {
       const [result] = await execute('UPDATE user_sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL', [toSqlDate(revokedAt), sessionId]);
       return Number(result?.affectedRows || 0) > 0;
+    },
+    async upsertGoogleIdentity(input) {
+      const identity = normalizeGoogleIdentityInput(input);
+      const [existingRows] = await execute(
+        `SELECT i.user_id AS userId,u.email,u.display_name AS displayName,u.avatar_url AS avatarUrl
+           FROM identities i JOIN users u ON u.id=i.user_id
+          WHERE i.provider='GOOGLE' AND i.provider_subject=? LIMIT 1`,
+        [identity.googleSubject]
+      );
+      if (Array.isArray(existingRows) && existingRows[0]) {
+        const row = existingRows[0];
+        await execute(
+          `UPDATE users SET email=COALESCE(?,email), display_name=COALESCE(?,display_name), avatar_url=COALESCE(?,avatar_url) WHERE id=?`,
+          [identity.email, identity.displayName, identity.avatarUrl, row.userId]
+        );
+        await execute(
+          `UPDATE identities SET provider_email=COALESCE(?,provider_email) WHERE provider='GOOGLE' AND provider_subject=?`,
+          [identity.email, identity.googleSubject]
+        );
+        return {
+          userId: String(row.userId),
+          email: identity.email || row.email || null,
+          displayName: identity.displayName || row.displayName || null,
+          avatarUrl: identity.avatarUrl || row.avatarUrl || null
+        };
+      }
+      if (identity.email) {
+        const [emailRows] = await execute('SELECT id FROM users WHERE email=? LIMIT 1', [identity.email]);
+        if (Array.isArray(emailRows) && emailRows[0]) throw namedError('identity_link_confirmation_required', 409);
+      }
+      const userId = randomUUID();
+      await execute(
+        `INSERT INTO users (id,email,display_name,avatar_url) VALUES (?,?,?,?)`,
+        [userId, identity.email, identity.displayName, identity.avatarUrl]
+      );
+      await execute(
+        `INSERT INTO identities (id,user_id,provider,provider_subject,provider_email) VALUES (?,?,'GOOGLE',?,?)`,
+        [randomUUID(), userId, identity.googleSubject, identity.email]
+      );
+      return { userId, email: identity.email, displayName: identity.displayName, avatarUrl: identity.avatarUrl };
+    },
+    async upsertGoogleConnection(input) {
+      const connection = normalizeGoogleConnectionInput(input);
+      const [rows] = await execute(
+        `SELECT user_id AS userId,encrypted_refresh_token AS encryptedRefreshToken,token_key_version AS tokenKeyVersion,connected_at AS connectedAt
+           FROM google_connections WHERE google_subject=? LIMIT 1`,
+        [connection.googleSubject]
+      );
+      const existing = Array.isArray(rows) && rows[0] ? rows[0] : null;
+      if (existing && String(existing.userId) !== connection.userId) throw namedError('google_connection_owner_mismatch', 409);
+      const encryptedRefreshToken = connection.encryptedRefreshToken || existing?.encryptedRefreshToken || null;
+      const tokenKeyVersion = connection.tokenKeyVersion || existing?.tokenKeyVersion || null;
+      if (!encryptedRefreshToken) throw namedError('google_refresh_token_required', 409);
+      if (existing) {
+        await execute(
+          `UPDATE google_connections
+              SET encrypted_refresh_token=?, token_key_version=?, granted_scopes=?, status='CONNECTED', revoked_at=NULL
+            WHERE google_subject=?`,
+          [encryptedRefreshToken, tokenKeyVersion, JSON.stringify(connection.grantedScopes), connection.googleSubject]
+        );
+      } else {
+        await execute(
+          `INSERT INTO google_connections (id,user_id,google_subject,encrypted_refresh_token,token_key_version,granted_scopes,status)
+           VALUES (?,?,?,?,?,?,'CONNECTED')`,
+          [randomUUID(), connection.userId, connection.googleSubject, encryptedRefreshToken, tokenKeyVersion, JSON.stringify(connection.grantedScopes)]
+        );
+      }
+      return {
+        userId: connection.userId,
+        googleSubject: connection.googleSubject,
+        encryptedRefreshToken,
+        tokenKeyVersion,
+        grantedScopes: connection.grantedScopes,
+        status: 'CONNECTED'
+      };
+    },
+    async getGoogleConnectionByUserId(userId) {
+      requireId(userId, 'google_connection_user_required');
+      const [rows] = await execute(
+        `SELECT user_id AS userId,google_subject AS googleSubject,encrypted_refresh_token AS encryptedRefreshToken,token_key_version AS tokenKeyVersion,granted_scopes AS grantedScopes,status,connected_at AS connectedAt,revoked_at AS revokedAt
+           FROM google_connections WHERE user_id=? AND status='CONNECTED' AND revoked_at IS NULL ORDER BY connected_at DESC LIMIT 1`,
+        [userId]
+      );
+      return Array.isArray(rows) && rows[0] ? normalizeDbGoogleConnection(rows[0]) : null;
+    },
+    async recordOAuthConsent(input) {
+      const consent = normalizeOAuthConsentInput(input);
+      const record = { id: randomUUID(), ...consent, grantedAt: new Date().toISOString(), revokedAt: null };
+      await execute(
+        `INSERT INTO oauth_consents (id,user_id,provider,purpose,scopes,policy_version,granted_at,revoked_at)
+         VALUES (?,?,?,?,?,?,?,NULL)`,
+        [record.id, record.userId, record.provider, record.purpose, JSON.stringify(record.scopes), record.policyVersion, toSqlDate(record.grantedAt)]
+      );
+      return record;
     },
     async createProposal(proposal) {
       validateProposalRecord(proposal);
@@ -198,6 +352,45 @@ export function newSessionRecord({ userId, tokenFingerprint, issuedAt, expiresAt
   return Object.freeze(record);
 }
 
+function normalizeGoogleIdentityInput(input = {}) {
+  requireId(input.googleSubject, 'google_subject_required');
+  const email = input.email ? String(input.email).trim().toLowerCase().slice(0, 320) : null;
+  return {
+    googleSubject: String(input.googleSubject),
+    email,
+    emailVerified: input.emailVerified === true,
+    displayName: input.displayName ? String(input.displayName).trim().slice(0, 160) : null,
+    avatarUrl: input.avatarUrl ? String(input.avatarUrl).trim().slice(0, 2048) : null
+  };
+}
+
+function normalizeGoogleConnectionInput(input = {}) {
+  requireId(input.userId, 'google_connection_user_required');
+  requireId(input.googleSubject, 'google_subject_required');
+  const scopes = [...new Set((Array.isArray(input.grantedScopes) ? input.grantedScopes : []).map(String).filter(Boolean))].slice(0, 50);
+  if (!scopes.length) throw namedError('google_scopes_required');
+  return {
+    userId: String(input.userId),
+    googleSubject: String(input.googleSubject),
+    encryptedRefreshToken: input.encryptedRefreshToken ? String(input.encryptedRefreshToken) : null,
+    tokenKeyVersion: input.tokenKeyVersion ? String(input.tokenKeyVersion).slice(0, 64) : null,
+    grantedScopes: scopes
+  };
+}
+
+function normalizeOAuthConsentInput(input = {}) {
+  requireId(input.userId, 'oauth_consent_user_required');
+  const provider = String(input.provider || '').toUpperCase();
+  if (!provider || provider.length > 32) throw namedError('oauth_consent_provider_required');
+  const purpose = String(input.purpose || '').toUpperCase();
+  if (!purpose || purpose.length > 64) throw namedError('oauth_consent_purpose_required');
+  const scopes = [...new Set((Array.isArray(input.scopes) ? input.scopes : []).map(String).filter(Boolean))].slice(0, 50);
+  if (!scopes.length) throw namedError('oauth_consent_scopes_required');
+  const policyVersion = String(input.policyVersion || '').trim();
+  if (!policyVersion || policyVersion.length > 64) throw namedError('oauth_consent_policy_required');
+  return { userId: String(input.userId), provider, purpose, scopes, policyVersion };
+}
+
 function validateSessionRecord(record) {
   requireId(record?.id, 'session_id_required');
   requireId(record?.userId, 'session_user_id_required');
@@ -226,6 +419,23 @@ function normalizeDbSession(row) {
   };
 }
 
+function normalizeDbGoogleConnection(row) {
+  let grantedScopes = row.grantedScopes;
+  if (typeof grantedScopes === 'string') {
+    try { grantedScopes = JSON.parse(grantedScopes); } catch { grantedScopes = []; }
+  }
+  return {
+    userId: String(row.userId),
+    googleSubject: String(row.googleSubject),
+    encryptedRefreshToken: row.encryptedRefreshToken ? String(row.encryptedRefreshToken) : null,
+    tokenKeyVersion: row.tokenKeyVersion ? String(row.tokenKeyVersion) : null,
+    grantedScopes: Array.isArray(grantedScopes) ? grantedScopes.map(String) : [],
+    status: String(row.status || 'CONNECTED'),
+    connectedAt: row.connectedAt ? new Date(row.connectedAt).toISOString() : null,
+    revokedAt: row.revokedAt ? new Date(row.revokedAt).toISOString() : null
+  };
+}
+
 function normalizeDbProposal(row) {
   let changes = row.changesJson;
   if (typeof changes === 'string') {
@@ -241,7 +451,7 @@ function normalizeDbProposal(row) {
 }
 
 function requireId(value, code) {
-  if (typeof value !== 'string' || !value.trim() || value.length > 160) throw namedError(code);
+  if (typeof value !== 'string' || !value.trim() || value.length > 255) throw namedError(code);
 }
 function normalizeIso(value) {
   const date = value instanceof Date ? value : new Date(value);
