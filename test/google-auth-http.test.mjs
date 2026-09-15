@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handleGoogleAuthHttp } from '../src/google-auth-http.mjs';
@@ -11,7 +12,7 @@ const TOKEN_KEY = Buffer.alloc(32, 7).toString('base64url');
 
 function runtimeConfig() {
   return {
-    appUrl: 'https://crewcheck.online/voyage',
+    appUrl: 'https://voyage-api-okay.onrender.com/voyage',
     session: { signingKey: SIGNING_KEY },
     google: {
       clientId: '627296893301-client.apps.googleusercontent.com',
@@ -35,7 +36,12 @@ function responseStub() {
   };
 }
 
-test('Google start route creates a signed Gmail authorization redirect without leaking server secret', async () => {
+function stateCookie(state) {
+  const fingerprint = createHash('sha256').update(state).digest('base64url');
+  return `voyage_oauth_state=${encodeURIComponent(fingerprint)}`;
+}
+
+test('Google start route creates a signed Gmail redirect and browser-bound state cookie without leaking server secret', async () => {
   const persistence = createMemoryPersistence();
   const req = { method: 'GET', url: '/api/v1/auth/google/start?purpose=gmail', headers: {} };
   const res = responseStub();
@@ -51,12 +57,23 @@ test('Google start route creates a signed Gmail authorization redirect without l
   assert.equal(location.searchParams.get('prompt'), 'consent');
   assert.match(location.searchParams.get('scope'), /gmail\.readonly/);
   assert.equal(location.toString().includes('server-only-client-secret'), false);
+
+  const cookie = res.getHeader('set-cookie');
+  assert.match(cookie, /^voyage_oauth_state=/);
+  assert.match(cookie, /HttpOnly/);
+  assert.match(cookie, /Secure/);
+  assert.match(cookie, /SameSite=Lax/);
+  assert.equal(cookie.includes(location.searchParams.get('state')), false);
 });
 
 test('Gmail callback persists verified Google subject, encrypted refresh token, consent and Voyage session', async () => {
   const persistence = createMemoryPersistence();
   const state = createSignedOAuthState({ purpose: 'gmail' }, SIGNING_KEY, { ttlSeconds: 600 });
-  const req = { method: 'GET', url: `/api/v1/auth/google/callback?code=code-1&state=${encodeURIComponent(state)}`, headers: {} };
+  const req = {
+    method: 'GET',
+    url: `/api/v1/auth/google/callback?code=code-1&state=${encodeURIComponent(state)}`,
+    headers: { cookie: stateCookie(state) }
+  };
   const res = responseStub();
   const fetchImpl = async (url, init = {}) => {
     if (url === 'https://oauth2.googleapis.com/token') {
@@ -88,6 +105,7 @@ test('Gmail callback persists verified Google subject, encrypted refresh token, 
   });
   assert.equal(handled, true);
   assert.equal(res.statusCode, 302);
+  assert.match(res.getHeader('set-cookie'), /Max-Age=0/);
 
   const returned = new URL(res.getHeader('location'));
   const fragment = new URLSearchParams(returned.hash.slice(1));
@@ -106,15 +124,47 @@ test('Gmail callback persists verified Google subject, encrypted refresh token, 
   assert.ok(await persistence.getSession(session.sessionId));
 });
 
-test('OAuth callback rejects a tampered state before token exchange', async () => {
+test('OAuth callback fails closed when the browser state cookie is missing or mismatched', async () => {
+  const persistence = createMemoryPersistence();
+  const state = createSignedOAuthState({ purpose: 'login' }, SIGNING_KEY);
+  const res = responseStub();
+  let fetchCalled = false;
+
+  await assert.rejects(
+    () => handleGoogleAuthHttp({
+      method: 'GET',
+      url: `/api/v1/auth/google/callback?code=code-1&state=${encodeURIComponent(state)}`,
+      headers: {}
+    }, res, '/api/v1/auth/google/callback', {
+      config: runtimeConfig(), persistence, fetchImpl: async () => { fetchCalled = true; throw new Error('must not fetch'); }
+    }),
+    /oauth_state_browser_mismatch/
+  );
+
+  await assert.rejects(
+    () => handleGoogleAuthHttp({
+      method: 'GET',
+      url: `/api/v1/auth/google/callback?code=code-1&state=${encodeURIComponent(state)}`,
+      headers: { cookie: 'voyage_oauth_state=wrong' }
+    }, responseStub(), '/api/v1/auth/google/callback', {
+      config: runtimeConfig(), persistence, fetchImpl: async () => { fetchCalled = true; throw new Error('must not fetch'); }
+    }),
+    /oauth_state_browser_mismatch/
+  );
+  assert.equal(fetchCalled, false);
+});
+
+test('OAuth callback rejects a tampered signed state even if its browser fingerprint is supplied', async () => {
   const persistence = createMemoryPersistence();
   const good = createSignedOAuthState({ purpose: 'login' }, SIGNING_KEY);
   const tampered = `${good.slice(0, -1)}${good.endsWith('A') ? 'B' : 'A'}`;
-  const req = { method: 'GET', url: `/api/v1/auth/google/callback?code=code-1&state=${encodeURIComponent(tampered)}`, headers: {} };
-  const res = responseStub();
   let fetchCalled = false;
   await assert.rejects(
-    () => handleGoogleAuthHttp(req, res, '/api/v1/auth/google/callback', {
+    () => handleGoogleAuthHttp({
+      method: 'GET',
+      url: `/api/v1/auth/google/callback?code=code-1&state=${encodeURIComponent(tampered)}`,
+      headers: { cookie: stateCookie(tampered) }
+    }, responseStub(), '/api/v1/auth/google/callback', {
       config: runtimeConfig(), persistence, fetchImpl: async () => { fetchCalled = true; throw new Error('must not fetch'); }
     }),
     /oauth_state_signature_invalid/
@@ -138,7 +188,7 @@ test('identity persistence does not silently link a second Google subject by ema
 test('public runtime config never exposes OAuth client id, client secret, redirect or token key', () => {
   const config = getRuntimeConfig({
     NODE_ENV: 'development',
-    APP_URL: 'https://crewcheck.online/voyage',
+    APP_URL: 'https://voyage-api-okay.onrender.com/voyage',
     SESSION_SIGNING_KEY: SIGNING_KEY,
     GOOGLE_CLIENT_ID: '627296893301-client.apps.googleusercontent.com',
     GOOGLE_CLIENT_SECRET: 'private-secret',
