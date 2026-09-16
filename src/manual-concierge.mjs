@@ -18,11 +18,10 @@ export function createManualConciergeRecorder({ now = Date.now, idFactory = rand
   function recordGuidance({ sessionId, userId, guidance } = {}) {
     const current = ownedSession(sessions, sessionId, userId);
     if (current.state !== 'STARTED') throw problem('manual_concierge_guidance_state_invalid', 409);
-    const normalized = normalizeGuidance(guidance, current);
     const updated = Object.freeze({
       ...current,
       state: 'GUIDANCE_RECORDED',
-      guidance: normalized,
+      guidance: normalizeGuidance(guidance, current),
       guidanceRecordedAt: clockIso(now)
     });
     sessions.set(sessionId, updated);
@@ -32,11 +31,10 @@ export function createManualConciergeRecorder({ now = Date.now, idFactory = rand
   function recordOutcome({ sessionId, userId, outcome } = {}) {
     const current = ownedSession(sessions, sessionId, userId);
     if (current.state !== 'GUIDANCE_RECORDED') throw problem('manual_concierge_outcome_state_invalid', 409);
-    const normalized = normalizeOutcome(outcome);
     const updated = Object.freeze({
       ...current,
       state: 'COMPLETED',
-      outcome: normalized,
+      outcome: normalizeOutcome(outcome),
       completedAt: clockIso(now)
     });
     sessions.set(sessionId, updated);
@@ -78,38 +76,37 @@ export function createManualConciergeRecorder({ now = Date.now, idFactory = rand
 }
 
 function normalizeSession(input, { now, idFactory }) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw problem('manual_concierge_session_required');
+  requireObject(input, 'manual_concierge_session_required');
+  const nowMs = clockMs(now);
   const sessionId = input.sessionId == null ? requireText(idFactory(), 'manual_concierge_session_id_invalid') : requireText(input.sessionId, 'manual_concierge_session_id_invalid');
   const userId = requireText(input.userId, 'manual_concierge_user_id_required');
   const tripId = input.tripId == null ? null : requireText(input.tripId, 'manual_concierge_trip_id_invalid');
   const decision = requireText(input.decision, 'manual_concierge_decision_required');
-  const contextFacts = normalizeArray(input.contextFacts, normalizeFact, 'manual_concierge_facts_invalid');
+  const contextFacts = normalizeArray(input.contextFacts, (item) => normalizeFact(item, nowMs), 'manual_concierge_facts_invalid');
   const declaredPreferences = normalizeArray(input.declaredPreferences, normalizePreference, 'manual_concierge_preferences_invalid');
   const inferences = normalizeArray(input.inferences, normalizeInference, 'manual_concierge_inferences_invalid');
   return Object.freeze({
-    sessionId,
-    userId,
-    tripId,
-    decision,
-    state: 'STARTED',
+    sessionId, userId, tripId, decision, state: 'STARTED',
     contextFacts: Object.freeze(contextFacts),
     declaredPreferences: Object.freeze(declaredPreferences),
     inferences: Object.freeze(inferences),
     guidance: null,
     outcome: null,
-    startedAt: clockIso(now),
+    startedAt: new Date(nowMs).toISOString(),
     guidanceRecordedAt: null,
     completedAt: null
   });
 }
 
-function normalizeFact(input) {
+function normalizeFact(input, nowMs) {
   requireObject(input, 'manual_concierge_fact_invalid');
+  const observedAt = normalizeTime(input.observedAt, 'manual_concierge_fact_observed_at_invalid');
+  if (Date.parse(observedAt) > nowMs + 60_000) throw problem('manual_concierge_fact_observed_at_future');
   return Object.freeze({
     key: requireText(input.key, 'manual_concierge_fact_key_required'),
     value: jsonClone(input.value),
     sourceRef: requireText(input.sourceRef, 'manual_concierge_fact_source_required'),
-    observedAt: normalizeTime(input.observedAt, 'manual_concierge_fact_observed_at_invalid'),
+    observedAt,
     freshness: requireEnum(input.freshness, FRESHNESS, 'manual_concierge_fact_freshness_invalid')
   });
 }
@@ -125,12 +122,11 @@ function normalizePreference(input) {
 
 function normalizeInference(input) {
   requireObject(input, 'manual_concierge_inference_invalid');
-  const confidence = numberBetween(input.confidence, 0, 1, 'manual_concierge_inference_confidence_invalid');
   return Object.freeze({
     key: requireText(input.key, 'manual_concierge_inference_key_required'),
     value: jsonClone(input.value),
     sourceRef: requireText(input.sourceRef, 'manual_concierge_inference_source_required'),
-    confidence,
+    confidence: numberBetween(input.confidence, 0, 1, 'manual_concierge_inference_confidence_invalid'),
     label: 'INFERENCE'
   });
 }
@@ -232,20 +228,55 @@ function normalizeTime(value, code) {
   return new Date(ms).toISOString();
 }
 
-function clockIso(now) {
+function clockMs(now) {
   const ms = Number(now());
   if (!Number.isFinite(ms)) throw problem('manual_concierge_clock_invalid');
-  return new Date(ms).toISOString();
+  return ms;
+}
+
+function clockIso(now) {
+  return new Date(clockMs(now)).toISOString();
 }
 
 function jsonClone(value) {
   if (value === undefined) throw problem('manual_concierge_value_required');
+  assertJsonValue(value);
+  return JSON.parse(JSON.stringify(value));
+}
+
+function assertJsonValue(value, active = new WeakSet()) {
+  if (value === null) return;
+  const type = typeof value;
+  if (type === 'string' || type === 'boolean') return;
+  if (type === 'number') {
+    if (!Number.isFinite(value)) throw problem('manual_concierge_value_not_json');
+    return;
+  }
+  if (type !== 'object' || active.has(value)) throw problem('manual_concierge_value_not_json');
+  active.add(value);
   try {
-    const serialized = JSON.stringify(value);
-    if (serialized === undefined) throw new Error('not_json');
-    return JSON.parse(serialized);
-  } catch {
-    throw problem('manual_concierge_value_not_json');
+    if (Array.isArray(value)) {
+      const keys = Object.keys(value);
+      if (keys.length !== value.length) throw problem('manual_concierge_value_not_json');
+      for (let index = 0; index < value.length; index += 1) {
+        if (!(index in value) || keys[index] !== String(index)) throw problem('manual_concierge_value_not_json');
+        assertJsonValue(value[index], active);
+      }
+      return;
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) throw problem('manual_concierge_value_not_json');
+    if (Object.getOwnPropertySymbols(value).length) throw problem('manual_concierge_value_not_json');
+    const enumerableKeys = Object.keys(value);
+    const ownNames = Object.getOwnPropertyNames(value);
+    if (enumerableKeys.length !== ownNames.length) throw problem('manual_concierge_value_not_json');
+    for (const key of enumerableKeys) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) throw problem('manual_concierge_value_not_json');
+      assertJsonValue(descriptor.value, active);
+    }
+  } finally {
+    active.delete(value);
   }
 }
 
