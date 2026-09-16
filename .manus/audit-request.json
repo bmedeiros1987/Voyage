@@ -1,5 +1,5 @@
 {
-  "pr_number": 4,
-  "requested_sha": "28b1338f8270ea495ca6c86a84a57e365dfef062",
-  "scope": "Final independent Product/UX/E2E gate for Voyage PR #4. Revalidate Adaptive Home, CTA honesty/no-op behavior, >=44px/a11y, Journey Calendar, responsive mobile/tablet behavior, Automatic/Dark/Light themes, and offline/PWA/document-retention regressions. Verify exact-SHA GitHub CI and Android evidence. Read-only only; do not modify code and do not merge."
+  "pr_number": 49,
+  "requested_sha": "4911affcdbc5275c4dcc5843c37bf69be0ac75b4",
+  "scope": "Final independent exact-SHA gate for Voyage PR #49 Ecosystem Identity / Vacation Bridge runtime. Adversarially verify cross-user isolation, silent CrewCheck membership detection, VISITOR invisibility, subscription != consent, explicit default CREWCHECK_VOYAGE_CONNECTION=false, persisted consent override only by authenticated user action, fail-closed authentication, no CrewCheck operational roster leakage into Voyage, Vacation Bridge projection boundaries, no itinerary mutation, memory/TiDB persistence parity, compatibility with current main, and exact-SHA GitHub CI evidence. Zero reproducible P0/P1 required for MERGE. Read-only only; do not modify code and do not merge."
 }
