@@ -137,6 +137,9 @@ function normalizeGuidance(input, session) {
   const recommendation = input.recommendation == null ? null : requireText(input.recommendation, 'manual_concierge_recommendation_invalid');
   if (status === 'ACTION_RECOMMENDED' && !recommendation) throw problem('manual_concierge_recommendation_required');
   if (status === 'ACTION_RECOMMENDED' && session.contextFacts.length === 0) throw problem('manual_concierge_action_requires_fact');
+  if (status === 'ACTION_RECOMMENDED' && !session.contextFacts.some((fact) => fact.freshness !== 'EXPIRED')) {
+    throw problem('manual_concierge_action_requires_current_fact');
+  }
   return Object.freeze({
     status,
     recommendation,
@@ -205,21 +208,18 @@ function requireBoolean(value, code) {
 }
 
 function numberBetween(value, min, max, code) {
-  const number = Number(value);
-  if (!Number.isFinite(number) || number < min || number > max) throw problem(code);
-  return number;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) throw problem(code);
+  return value;
 }
 
 function nonNegativeNumber(value, code) {
-  const number = Number(value);
-  if (!Number.isFinite(number) || number < 0) throw problem(code);
-  return number;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw problem(code);
+  return value;
 }
 
 function nonNegativeInteger(value, code) {
-  const number = Number(value);
-  if (!Number.isInteger(number) || number < 0) throw problem(code);
-  return number;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) throw problem(code);
+  return value;
 }
 
 function normalizeTime(value, code) {
