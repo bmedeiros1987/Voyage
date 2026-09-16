@@ -47,7 +47,10 @@ export async function buildRuntimeContext(globalUserId, persistence) {
   const profile = await persistence.getEcosystemProfile(globalUserId);
   const identity = buildEcosystemIdentity({ globalUserId, memberships: profile.memberships });
   const resolved = resolveEntitlements({ subscriptions: profile.subscriptions, memberships: identity.memberships });
-  const consents = Object.freeze(Object.fromEntries(profile.consents.map((item) => [item.consentKey, item.granted === true])));
+  const consents = Object.freeze({
+    [CONNECTION_CONSENT]: false,
+    ...Object.fromEntries(profile.consents.map((item) => [item.consentKey, item.granted === true]))
+  });
   return Object.freeze({
     globalUserId,
     identity,
