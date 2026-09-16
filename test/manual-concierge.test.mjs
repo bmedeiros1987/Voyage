@@ -38,7 +38,7 @@ test('records a Wizard-of-Oz session with provenance and explicit inference labe
   assert.equal(started.inferences[0].confidence, 0.72);
 });
 
-test('action guidance requires at least one fact and preserves explainability fields', () => {
+test('action guidance requires a current fact and preserves explainability fields', () => {
   const g = recorder();
   const started = remoteGateSession(g);
   const updated = g.recordGuidance({
@@ -64,6 +64,16 @@ test('action guidance requires at least one fact and preserves explainability fi
     userId: 'u1',
     guidance: { status: 'ACTION_RECOMMENDED', recommendation: 'Faça algo', why: 'sem fatos', confidence: 0.5 }
   }), /manual_concierge_action_requires_fact/);
+
+  const expired = g.startSession({
+    userId: 'u1', decision: 'Devo agir com base nisso?',
+    contextFacts: [{ key: 'flight.gate', value: '252', sourceRef: 'old-cache', observedAt: '2026-09-15T08:00:00Z', freshness: 'EXPIRED' }]
+  });
+  assert.throws(() => g.recordGuidance({
+    sessionId: expired.sessionId,
+    userId: 'u1',
+    guidance: { status: 'ACTION_RECOMMENDED', recommendation: 'Vá ao portão', why: 'fonte expirada', confidence: 0.2 }
+  }), /manual_concierge_action_requires_current_fact/);
 });
 
 test('NO_ACTION_REQUIRED and INSUFFICIENT_INFORMATION are valid non-action outputs', () => {
@@ -155,4 +165,12 @@ test('material values and measurement fields fail closed on invalid data', () =>
     userId: 'u1', decision: 'x',
     inferences: [{ key: 'guess', value: true, sourceRef: 'model', confidence: 2 }]
   }), /manual_concierge_inference_confidence_invalid/);
+  assert.throws(() => g.startSession({
+    userId: 'u1', decision: 'x',
+    inferences: [{ key: 'guess', value: true, sourceRef: 'model', confidence: '0.7' }]
+  }), /manual_concierge_inference_confidence_invalid/);
+  assert.throws(() => g.startSession({
+    userId: 'u1', decision: 'x',
+    contextFacts: [{ key: 'future', value: true, sourceRef: 'source', observedAt: '2026-09-16T14:42:00Z', freshness: 'FRESH' }]
+  }), /manual_concierge_fact_observed_at_future/);
 });
