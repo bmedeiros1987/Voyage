@@ -1,4 +1,4 @@
-import { fetchApi } from './api-origin.js';
+import { apiUrl, fetchApi, setSessionToken } from './api-origin.js';
 
 const themeOverrides = document.createElement('link');
 themeOverrides.rel = 'stylesheet';
@@ -11,6 +11,7 @@ importStyles.href = './imports.css';
 document.head.appendChild(importStyles);
 
 injectImportCenter();
+consumeOAuthReturn();
 
 const THEME_ORDER = ['auto', 'dark', 'light'];
 const THEME_LABELS = { auto: 'Automático', dark: 'Escuro', light: 'Claro' };
@@ -120,8 +121,7 @@ document.addEventListener('click', (event) => {
       showScreen('imports');
       break;
     case 'gmail-connect':
-      showShellNotice('A conexão Gmail será habilitada quando o OAuth estiver configurado no servidor.');
-      refreshGmailStatus();
+      window.location.assign(apiUrl('/api/v1/auth/google/start?purpose=gmail'));
       break;
     case 'back':
       showScreen(previousScreen || 'journeys', false);
@@ -194,6 +194,21 @@ function injectImportCenter() {
   document.querySelector('.app-shell')?.insertBefore(screen, document.querySelector('[data-bottom-nav]'));
 }
 
+function consumeOAuthReturn() {
+  const raw = String(globalThis.location?.hash || '').replace(/^#/, '');
+  if (!raw) return;
+  const params = new URLSearchParams(raw);
+  const token = params.get('voyage_session');
+  const gmailState = params.get('gmail');
+  const oauthError = params.get('oauth_error');
+  if (!token && !gmailState && !oauthError) return;
+
+  if (token) setSessionToken(token);
+  try { history.replaceState(null, '', `${location.pathname}${location.search}`); } catch {}
+  if (gmailState === 'connected') showShellNotice('Gmail conectado ao Voyage com acesso somente leitura.');
+  else if (oauthError) showShellNotice('A autorização do Google não foi concluída.');
+}
+
 async function refreshGmailStatus() {
   const title = document.querySelector('[data-gmail-title]');
   const detail = document.querySelector('[data-gmail-detail]');
@@ -203,12 +218,16 @@ async function refreshGmailStatus() {
     const response = await fetchApi('/api/v1/integrations/gmail/status', { headers: { Accept: 'application/json' } });
     if (!response.ok) throw new Error('gmail_status_unavailable');
     const status = await response.json();
-    if (status.enabled) {
-      title.textContent = status.pushSyncEnabled ? 'Gmail pronto para tempo real' : 'Gmail autorizado';
-      detail.textContent = status.pushSyncEnabled ? 'Watch + Pub/Sub disponíveis' : 'Aguardando canal Pub/Sub';
+    if (status.connected) {
+      title.textContent = status.pushSyncEnabled ? 'Gmail pronto para tempo real' : 'Gmail conectado';
+      detail.textContent = status.pushSyncEnabled ? 'Watch + Pub/Sub disponíveis' : 'Acesso somente leitura autorizado';
       dot.classList.add('gmail-dot--ready');
+    } else if (status.enabled) {
+      title.textContent = 'Gmail disponível para conectar';
+      detail.textContent = 'Acesso opcional e somente leitura';
+      dot.classList.remove('gmail-dot--ready');
     } else {
-      title.textContent = 'Gmail ainda não conectado';
+      title.textContent = 'Gmail ainda não configurado';
       detail.textContent = 'A importação manual continua funcionando normalmente';
       dot.classList.remove('gmail-dot--ready');
     }
@@ -255,8 +274,8 @@ function fetchWithTimeout(requestFactory, timeoutMs) {
   let timer;
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => {
-    controller.abort(new DOMException('Request timed out', 'TimeoutError'));
-    reject(new DOMException('Request timed out', 'TimeoutError'));
+      controller.abort(new DOMException('Request timed out', 'TimeoutError'));
+      reject(new DOMException('Request timed out', 'TimeoutError'));
     }, timeoutMs);
   });
   return Promise.race([requestFactory(controller.signal), timeout]).finally(() => clearTimeout(timer));
