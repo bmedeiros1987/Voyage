@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const port = 20000 + (process.pid % 20000);
+const appUrl = `http://127.0.0.1:${port}`;
+const redirectUri = `${appUrl}/api/v1/auth/google/callback`;
 let server;
 
 before(async () => {
@@ -15,7 +17,11 @@ before(async () => {
       ...process.env,
       NODE_ENV: 'test',
       PORT: String(port),
-      APP_URL: `http://127.0.0.1:${port}`
+      APP_URL: appUrl,
+      SESSION_SIGNING_KEY: '0123456789abcdef0123456789abcdef',
+      GOOGLE_CLIENT_ID: 'voyage-test-client.apps.googleusercontent.com',
+      GOOGLE_CLIENT_SECRET: 'server-only-test-secret',
+      GOOGLE_REDIRECT_URI: redirectUri
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -65,7 +71,7 @@ test('ambiguous protocol-relative request paths cannot resolve to valid routes',
 });
 
 test('CORS reflects only the configured web origin or trusted Capacitor shell origins', async () => {
-  const webOrigin = `http://127.0.0.1:${port}`;
+  const webOrigin = appUrl;
   for (const origin of [webOrigin, 'https://localhost', 'capacitor://localhost']) {
     const response = await exactRequest('/api/v1/config', { Origin: origin });
     assert.equal(response.statusCode, 200);
@@ -76,6 +82,25 @@ test('CORS reflects only the configured web origin or trusted Capacitor shell or
   const untrusted = await exactRequest('/api/v1/config', { Origin: 'https://attacker.example' });
   assert.equal(untrusted.statusCode, 200);
   assert.equal(untrusted.headers['access-control-allow-origin'], undefined);
+});
+
+test('Google login status and start route are mounted through the real server router', async () => {
+  const status = await exactRequest('/api/v1/auth/google/status');
+  assert.equal(status.statusCode, 200);
+  const statusBody = JSON.parse(status.body);
+  assert.equal(statusBody.enabled, true);
+  assert.equal(statusBody.gmailEnabled, false);
+
+  const start = await exactRequest('/api/v1/auth/google/start?purpose=login');
+  assert.equal(start.statusCode, 302);
+  const location = new URL(start.headers.location);
+  assert.equal(location.origin, 'https://accounts.google.com');
+  assert.equal(location.searchParams.get('client_id'), 'voyage-test-client.apps.googleusercontent.com');
+  assert.equal(location.searchParams.get('redirect_uri'), redirectUri);
+  assert.equal(location.searchParams.get('scope').includes('gmail.readonly'), false);
+  assert.match(String(start.headers['set-cookie'] || ''), /voyage_oauth_state=/);
+  assert.match(String(start.headers['set-cookie'] || ''), /HttpOnly/);
+  assert.equal(String(start.headers.location).includes('server-only-test-secret'), false);
 });
 
 function exactRequest(path, headers = {}) {
