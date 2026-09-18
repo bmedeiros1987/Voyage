@@ -82,6 +82,13 @@ const server = http.createServer(async (req, res) => {
       })) return;
     }
 
+    if (req.method === 'GET' && path === '/ready') {
+      try {
+        if (runtimePersistence.error) throw runtimePersistence.error;
+        await runtimePersistence.persistence.checkReady();
+        return json(res, 200, { storage: 'ready' });
+      } catch { return json(res, 503, { storage: 'unavailable' }); }
+    }
     if (req.method === 'GET' && path === '/health') {
       return json(res, 200, {
         status: 'ok', service: 'voyage-api', app: config.appName, environment: config.nodeEnv,
@@ -94,7 +101,11 @@ const server = http.createServer(async (req, res) => {
       });
     }
     if (req.method === 'GET' && path === '/api/v1/config') return json(res, 200, publicConfig(config));
-    if (req.method === 'GET' && path === '/api/v1/auth/google/status') return json(res, 200, { enabled: config.google.loginConfigured && !runtimePersistence.error, gmailEnabled: false, scopes: ['openid', 'email', 'profile'], principle: 'Google Login is isolated from Gmail authorization.' });
+    if (req.method === 'GET' && path === '/api/v1/auth/google/status') {
+      let storageReady = false;
+      try { if (!runtimePersistence.error) storageReady = await runtimePersistence.persistence.checkReady(); } catch {}
+      return json(res, 200, { enabled: config.google.loginConfigured && storageReady, gmailEnabled: false, scopes: ['openid', 'email', 'profile'] });
+    }
     if (req.method === 'GET' && path === '/api/v1/imports/capabilities') return json(res, 200, { ...supportedImportCapabilities(), pdfTextExtraction: 'best_effort_machine_readable_pdf', scannedPdfPolicy: 'Accept the file and mark NEEDS_REVIEW until OCR is available.', unknownDocumentPolicy: 'Import as OTHER rather than silently discarding.' });
     if (req.method === 'POST' && path === '/api/v1/imports/pdf') { requireContentType(req, 'application/pdf'); const body = await readRaw(req, MAX_PDF_BYTES); return json(res, 200, ingestPdfBuffer(body, { fileName: header(req, 'x-voyage-filename') || 'document.pdf', categoryHint: header(req, 'x-voyage-category') || null, provider: header(req, 'x-voyage-provider') || 'manual_pdf' })); }
     if (req.method === 'POST' && path === '/api/v1/imports/manual/preview') { const body = await readJson(req, MAX_JSON_BYTES); const classification = body.category || 'OTHER'; const userConfirmed = body.confirmedByUser === true; return json(res, 200, { importId: randomUUID(), status: userConfirmed ? 'PARSED' : 'NEEDS_REVIEW', source: 'manual', document: { category: classification, title: String(body.title || 'Item da viagem').slice(0, 220), provider: body.provider ? String(body.provider).slice(0, 160) : null, confirmationCode: body.confirmationCode ? String(body.confirmationCode).slice(0, 120) : null, startsAt: body.startsAt || null, endsAt: body.endsAt || null, location: body.location ? String(body.location).slice(0, 300) : null, notes: body.notes ? String(body.notes).slice(0, 2000) : null, confirmedByUser: userConfirmed }, review: userConfirmed ? { required: false, reasons: [] } : { required: true, reasons: ['MANUAL_CONFIRMATION_REQUIRED'] } }); }

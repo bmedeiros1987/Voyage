@@ -4,6 +4,17 @@ export function createJourneyStore(execute) {
   const journeys = new Map();
   const decode = (row) => row ? (typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload) : null;
   return {
+    async checkReady() {
+      if (execute) {
+        // Read-only schema checks; a configured URL alone is not readiness.
+        await execute('SELECT id,token_fingerprint FROM user_sessions LIMIT 0');
+        await execute('SELECT id,deleted_at FROM users LIMIT 0');
+        await execute('SELECT provider,provider_subject FROM identities LIMIT 0');
+        await execute('SELECT id,user_id,payload FROM voyage_imports LIMIT 0');
+        await execute('SELECT id,user_id,import_id,payload FROM voyage_journeys LIMIT 0');
+      }
+      return true;
+    },
     async saveImport(userId, record) {
       if (execute) await execute('INSERT INTO voyage_imports (id,user_id,payload) VALUES (?,?,?)', [record.importId, userId, JSON.stringify(record)]);
       else imports.set(record.importId, { userId, record: structuredClone(record) });
