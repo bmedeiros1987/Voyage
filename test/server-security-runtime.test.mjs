@@ -98,9 +98,34 @@ test('Google login status and start route are mounted through the real server ro
   assert.equal(location.searchParams.get('client_id'), 'voyage-test-client.apps.googleusercontent.com');
   assert.equal(location.searchParams.get('redirect_uri'), redirectUri);
   assert.equal(location.searchParams.get('scope').includes('gmail.readonly'), false);
-  assert.match(String(start.headers['set-cookie'] || ''), /voyage_oauth_state=/);
-  assert.match(String(start.headers['set-cookie'] || ''), /HttpOnly/);
+  const cookie = String(start.headers['set-cookie'] || '');
+  assert.match(cookie, /^__Host-voyage_oauth_[A-Za-z0-9_-]{43}=[A-Za-z0-9_-]{43};/);
+  assert.match(cookie, /Path=\/; Max-Age=600; HttpOnly; Secure; SameSite=Lax/);
+  assert.doesNotMatch(cookie, /Domain=/i);
   assert.equal(String(start.headers.location).includes('server-only-test-secret'), false);
+});
+
+test('real router keeps simultaneous OAuth starts and callbacks independent', async () => {
+  const starts = await Promise.all([
+    exactRequest('/api/v1/auth/google/start?purpose=login'),
+    exactRequest('/api/v1/auth/google/start?purpose=login')
+  ]);
+  starts.forEach(start => assert.equal(start.statusCode, 302));
+  const cookies = starts.map(start => start.headers['set-cookie'][0].split(';')[0]);
+  const names = cookies.map(cookie => cookie.split('=')[0]);
+  assert.notEqual(names[0], names[1]);
+  const sameSnapshot = { Cookie: cookies.join('; ') };
+  const paths = starts.map(start => '/api/v1/auth/google/callback?error=access_denied&state=' + encodeURIComponent(new URL(start.headers.location).searchParams.get('state')));
+  const callbacks = await Promise.all(paths.map(path => exactRequest(path, sameSnapshot)));
+  callbacks.forEach((callback, index) => {
+    assert.equal(callback.statusCode, 302);
+    assert.match(callback.headers.location, /oauth_error=access_denied/);
+    assert.equal(callback.headers['set-cookie'].length, 1);
+    assert.ok(callback.headers['set-cookie'][0].startsWith(names[index] + '=;'));
+    assert.match(callback.headers['set-cookie'][0], /Max-Age=0;/);
+  });
+  const replay = await exactRequest(paths[0]);
+  assert.equal(replay.statusCode, 400);
 });
 
 function exactRequest(path, headers = {}) {
