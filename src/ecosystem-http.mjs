@@ -45,8 +45,18 @@ export async function handleEcosystemHttp(req, res, path, { sessionSigningKey, p
 export async function buildRuntimeContext(globalUserId, persistence) {
   requirePersistence(persistence);
   const profile = await persistence.getEcosystemProfile(globalUserId);
-  const identity = buildEcosystemIdentity({ globalUserId, memberships: profile.memberships });
-  const resolved = resolveEntitlements({ subscriptions: profile.subscriptions, memberships: identity.memberships });
+  const canonicalIdentity = buildEcosystemIdentity({ globalUserId, memberships: profile.memberships });
+  const hasActiveCrewCheck = canonicalIdentity.memberships.CREWCHECK.state === 'ACTIVE';
+  // Visitor/inactive relationships are private server-side history, not a Voyage
+  // UI hint. Project them to exactly the absent-membership shape at this boundary.
+  // Consent and a paid subscription must never promote a visitor into a member.
+  const identity = hasActiveCrewCheck ? canonicalIdentity : buildEcosystemIdentity({
+    globalUserId,
+    createdAt: canonicalIdentity.createdAt,
+    memberships: profile.memberships.filter((item) => String(item?.product || '').toUpperCase() !== 'CREWCHECK')
+  });
+  const visibleSubscriptions = hasActiveCrewCheck ? profile.subscriptions : profile.subscriptions.filter((item) => String(item?.product || '').toUpperCase() !== 'CREWCHECK');
+  const resolved = resolveEntitlements({ subscriptions: visibleSubscriptions, memberships: identity.memberships });
   const consents = Object.freeze({
     [CONNECTION_CONSENT]: false,
     ...Object.fromEntries(profile.consents.map((item) => [item.consentKey, item.granted === true]))
