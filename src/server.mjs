@@ -12,6 +12,7 @@ import { buildDietaryTravelCard, buildGroupDietarySummary, dietaryCapabilities, 
 import { assessPlanQuality, buildPlanningBrief, buildPlanningStrategy, buildPreferenceLearningEvent, buildReplanDecision, plannerBrainCapabilities } from './planner-brain.mjs';
 import { handleCrewCheckIntegrationHttp } from './crewcheck-http-integration.mjs';
 import { handlePlannerProposalHttp } from './planner-proposal-http.mjs';
+import { handleEcosystemHttp } from './ecosystem-http.mjs';
 import { createRuntimePersistence } from './persistence.mjs';
 import { createGmailPubSubVerifier } from './gmail-pubsub-auth.mjs';
 
@@ -34,6 +35,7 @@ const MAX_JSON_BYTES = 256 * 1024;
 const MAX_PDF_BYTES = 15 * 1024 * 1024;
 const STATIC_FILES = buildStaticMap();
 const PROPOSAL_PATH_PREFIX = '/api/v1/planner/itinerary/proposals';
+const ECOSYSTEM_PATH_PREFIX = '/api/v1/ecosystem';
 const runtimePersistence = initializeRuntimePersistence();
 const gmailPubSubVerifier = createGmailPubSubVerifier({
   audience: config.google.pubsubConfigured ? config.google.pubsubAudience : null,
@@ -59,6 +61,14 @@ const server = http.createServer(async (req, res) => {
       })) return;
     }
 
+    if (path === ECOSYSTEM_PATH_PREFIX || path.startsWith(`${ECOSYSTEM_PATH_PREFIX}/`)) {
+      if (runtimePersistence.error) throw runtimePersistence.error;
+      if (await handleEcosystemHttp(req, res, path, {
+        sessionSigningKey: config.session.signingKey,
+        persistence: runtimePersistence.persistence
+      })) return;
+    }
+
     if (req.method === 'GET' && path === '/health') {
       return json(res, 200, {
         status: 'ok', service: 'voyage-api', app: config.appName, environment: config.nodeEnv,
@@ -66,6 +76,7 @@ const server = http.createServer(async (req, res) => {
         googleLogin: config.google.loginConfigured ? 'configured' : 'not_configured',
         gmail: config.google.gmailConfigured ? 'configured' : 'not_configured',
         crewCheckIntegration: config.sharedCrewCheck.configured ? 'configured' : 'not_configured',
+        ecosystemIdentity: 'authenticated_runtime',
         universalImporter: 'enabled', automaticTripPlanner: 'enabled', plannerBrain: 'enabled',
         dietarySafety: 'enabled', webShell: 'enabled', timestamp: new Date().toISOString()
       });
