@@ -412,7 +412,7 @@ export function newSessionRecord({ userId, tokenFingerprint, issuedAt, expiresAt
 
 function normalizeGoogleIdentityInput(input = {}) {
   requireId(input.googleSubject, 'google_subject_required');
-  const email = input.email ? String(input.email).trim().toLowerCase().slice(0, 320) : null;
+  const email = input.emailVerified === true && input.email ? String(input.email).trim().toLowerCase().slice(0, 320) : null;
   return {
     googleSubject: String(input.googleSubject),
     email,
