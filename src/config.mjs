@@ -44,7 +44,7 @@ export function getRuntimeConfig(env = process.env) {
       redirectUri: googleRedirectUri,
       tokenEncryptionKey,
       tokenKeyVersion,
-      loginConfigured: Boolean(googleClientId && googleClientSecret),
+      loginConfigured: Boolean(googleClientId && googleClientSecret && googleRedirectUri && sessionSigningKey),
       redirectConfigured: Boolean(googleRedirectUri),
       gmailConfigured: Boolean(googleClientId && googleClientSecret && googleRedirectUri && tokenEncryptionKey),
       pubsubConfigured,

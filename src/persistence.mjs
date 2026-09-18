@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createJourneyStore } from './journey-store.mjs';
 
 export function createRuntimePersistence({
   nodeEnv = 'development',
@@ -93,6 +94,7 @@ export function createMemoryPersistence() {
 
   return Object.freeze({
     kind: 'memory',
+    ...createJourneyStore(),
     durability: 'ephemeral',
     async putSession(session) {
       validateSessionRecord(session);
@@ -207,6 +209,7 @@ export function createTidbPersistence({ execute } = {}) {
   if (typeof execute !== 'function') throw namedError('tidb_execute_required', 503);
   return Object.freeze({
     kind: 'tidb',
+    ...createJourneyStore(execute),
     durability: 'persistent',
     async putSession(session) {
       validateSessionRecord(session);
@@ -238,7 +241,7 @@ export function createTidbPersistence({ execute } = {}) {
       const [existingRows] = await execute(
         `SELECT i.user_id AS userId,u.email,u.display_name AS displayName,u.avatar_url AS avatarUrl
            FROM identities i JOIN users u ON u.id=i.user_id
-          WHERE i.provider='GOOGLE' AND i.provider_subject=? LIMIT 1`,
+          WHERE i.provider='GOOGLE' AND i.provider_subject=? AND u.deleted_at IS NULL LIMIT 1`,
         [identity.googleSubject]
       );
       if (Array.isArray(existingRows) && existingRows[0]) {

@@ -14,6 +14,9 @@ import { handleCrewCheckIntegrationHttp } from './crewcheck-http-integration.mjs
 import { handlePlannerProposalHttp } from './planner-proposal-http.mjs';
 import { createRuntimePersistence } from './persistence.mjs';
 import { createGmailPubSubVerifier } from './gmail-pubsub-auth.mjs';
+import { handleGoogleAuthHttp } from './google-auth-http.mjs';
+import { authenticatePersistedSession } from './auth-session.mjs';
+import { handleJourneyHttp } from './journey-http.mjs';
 
 const config = getRuntimeConfig();
 const CONTENT_SECURITY_POLICY = [
@@ -48,7 +51,27 @@ const server = http.createServer(async (req, res) => {
   try {
     setSecurityHeaders(req, res, requestId);
     if (path === null) return json(res, 400, { error: 'invalid_request_path', requestId });
+    if (config.nodeEnv === 'production' && (path.endsWith('/preview') || path === '/api/v1/imports/pdf')) return json(res, 404, { error: 'not_found' });
     if (req.method === 'OPTIONS') { res.statusCode = 204; res.end(); return; }
+    if (path === '/api/v1/journeys' || path.startsWith('/api/v1/journeys/')) {
+      if (runtimePersistence.error) throw runtimePersistence.error;
+      if (await handleJourneyHttp(req, res, path, { persistence: runtimePersistence.persistence, sessionSigningKey: config.session.signingKey })) return;
+    }
+    if (path === '/api/v1/auth/google/start' || path === '/api/v1/auth/google/callback') {
+      if (runtimePersistence.error) throw runtimePersistence.error;
+      if (new URL(req.url, 'http://localhost').searchParams.get('purpose') === 'gmail') return json(res, 503, { error: 'gmail_unavailable' });
+      if (await handleGoogleAuthHttp(req, res, path, { config: { ...config, google: { ...config.google, gmailRuntimeEnabled: false } }, persistence: runtimePersistence.persistence })) return;
+    }
+    if ((req.method === 'GET' && path === '/api/v1/auth/session') || (req.method === 'POST' && path === '/api/v1/auth/logout')) {
+      if (runtimePersistence.error) throw runtimePersistence.error;
+      const session = await authenticatePersistedSession(req, config.session.signingKey, runtimePersistence.persistence);
+      res.setHeader('Cache-Control', 'no-store');
+      if (path === '/api/v1/auth/logout') {
+        await runtimePersistence.persistence.revokeSession(session.sessionId);
+        return json(res, 200, { loggedOut: true });
+      }
+      return json(res, 200, { userId: session.userId });
+    }
     if (await handleCrewCheckIntegrationHttp(req, res, path)) return;
 
     if (path === PROPOSAL_PATH_PREFIX || path.startsWith(`${PROPOSAL_PATH_PREFIX}/`)) {
@@ -71,11 +94,11 @@ const server = http.createServer(async (req, res) => {
       });
     }
     if (req.method === 'GET' && path === '/api/v1/config') return json(res, 200, publicConfig(config));
-    if (req.method === 'GET' && path === '/api/v1/auth/google/status') return json(res, 200, { enabled: config.google.loginConfigured, scopes: ['openid', 'email', 'profile'], principle: 'Google Login is isolated from Gmail authorization.' });
+    if (req.method === 'GET' && path === '/api/v1/auth/google/status') return json(res, 200, { enabled: config.google.loginConfigured && !runtimePersistence.error, gmailEnabled: false, scopes: ['openid', 'email', 'profile'], principle: 'Google Login is isolated from Gmail authorization.' });
     if (req.method === 'GET' && path === '/api/v1/imports/capabilities') return json(res, 200, { ...supportedImportCapabilities(), pdfTextExtraction: 'best_effort_machine_readable_pdf', scannedPdfPolicy: 'Accept the file and mark NEEDS_REVIEW until OCR is available.', unknownDocumentPolicy: 'Import as OTHER rather than silently discarding.' });
     if (req.method === 'POST' && path === '/api/v1/imports/pdf') { requireContentType(req, 'application/pdf'); const body = await readRaw(req, MAX_PDF_BYTES); return json(res, 200, ingestPdfBuffer(body, { fileName: header(req, 'x-voyage-filename') || 'document.pdf', categoryHint: header(req, 'x-voyage-category') || null, provider: header(req, 'x-voyage-provider') || 'manual_pdf' })); }
     if (req.method === 'POST' && path === '/api/v1/imports/manual/preview') { const body = await readJson(req, MAX_JSON_BYTES); const classification = body.category || 'OTHER'; const userConfirmed = body.confirmedByUser === true; return json(res, 200, { importId: randomUUID(), status: userConfirmed ? 'PARSED' : 'NEEDS_REVIEW', source: 'manual', document: { category: classification, title: String(body.title || 'Item da viagem').slice(0, 220), provider: body.provider ? String(body.provider).slice(0, 160) : null, confirmationCode: body.confirmationCode ? String(body.confirmationCode).slice(0, 120) : null, startsAt: body.startsAt || null, endsAt: body.endsAt || null, location: body.location ? String(body.location).slice(0, 300) : null, notes: body.notes ? String(body.notes).slice(0, 2000) : null, confirmedByUser: userConfirmed }, review: userConfirmed ? { required: false, reasons: [] } : { required: true, reasons: ['MANUAL_CONFIRMATION_REQUIRED'] } }); }
-    if (req.method === 'GET' && path === '/api/v1/integrations/gmail/status') return json(res, 200, { enabled: config.google.gmailConfigured, pushSyncEnabled: config.google.gmailConfigured && config.google.pubsubConfigured, requestedScope: 'https://www.googleapis.com/auth/gmail.readonly', discoveryQuery: buildGmailDiscoveryQuery(), contract: gmailRealtimeContract(), storagePolicy: 'Store structured travel facts; avoid long-term retention of irrelevant message bodies.' });
+    if (req.method === 'GET' && path === '/api/v1/integrations/gmail/status') return json(res, 200, { enabled: false, pushSyncEnabled: false, requestedScope: 'https://www.googleapis.com/auth/gmail.readonly', discoveryQuery: buildGmailDiscoveryQuery(), contract: gmailRealtimeContract(), storagePolicy: 'Store structured travel facts; avoid long-term retention of irrelevant message bodies.' });
     if (req.method === 'POST' && path === '/api/v1/integrations/gmail/message/preview') return json(res, 200, classifyGmailCandidate(await readJson(req, MAX_JSON_BYTES)));
     if (req.method === 'POST' && path === '/api/v1/integrations/gmail/pubsub') { const push = await gmailPubSubVerifier.verifyRequest(req); const body = await readJson(req, MAX_JSON_BYTES); const notification = parseGmailPubSubEnvelope(body); if (!gmailPubSubVerifier.registerDelivery(notification.messageId)) return json(res, 202, { accepted: true, duplicate: true, notification, action: 'IGNORED_REPLAYED_DELIVERY' }); return json(res, 202, { accepted: true, duplicate: false, verifiedPushSubject: push.email || push.subject, notification, action: config.google.gmailConfigured ? 'PROCESS_GMAIL_HISTORY' : 'DEFER_UNTIL_GMAIL_CONFIGURED' }); }
     if (req.method === 'POST' && path === '/api/v1/trips/graph/preview') { const body = await readJson(req, MAX_JSON_BYTES); const reservations = Array.isArray(body.reservations) ? body.reservations.slice(0, 200) : []; const incoming = body.incoming && typeof body.incoming === 'object' ? body.incoming : null; return json(res, 200, { graph: buildTripGraph(reservations), reservationMatch: incoming ? matchReservation(reservations, incoming) : null, tripSuggestion: incoming && Array.isArray(body.trips) ? suggestTripForReservation(body.trips.slice(0, 100), incoming) : null }); }
@@ -95,7 +118,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && path === '/api/v1/dietary/venue-check') { const body = await readJson(req, MAX_JSON_BYTES); return json(res, 200, evaluateFoodCandidate(body.candidate || {}, body.profile || {})); }
     if (req.method === 'POST' && path === '/api/v1/dietary/group-summary') { const body = await readJson(req, MAX_JSON_BYTES); return json(res, 200, buildGroupDietarySummary(body.travellers || [])); }
     if (req.method === 'POST' && path === '/api/v1/dietary/travel-card') { const body = await readJson(req, MAX_JSON_BYTES); return json(res, 200, buildDietaryTravelCard(body.profile || {}, body.locale || 'pt-BR')); }
-    if (req.method === 'GET' && path === '/api/v1/trips/demo') return json(res, 200, demoTrips());
+    if (req.method === 'GET' && path === '/api/v1/trips/demo' && config.nodeEnv !== 'production') return json(res, 200, demoTrips());
     if (req.method === 'GET' && STATIC_FILES.has(path)) return serveStatic(res, STATIC_FILES.get(path));
     return json(res, 404, { error: 'not_found', requestId });
   } catch (error) {
@@ -117,6 +140,9 @@ function initializeRuntimePersistence() {
 function buildStaticMap() {
   const webFiles = [
     ['index.html', 'text/html; charset=utf-8'],
+    ['launch.html', 'text/html; charset=utf-8'],
+    ['launch.js', 'text/javascript; charset=utf-8'],
+    ['launch.css', 'text/css; charset=utf-8'],
     ['styles.css', 'text/css; charset=utf-8'],
     ['themes.css', 'text/css; charset=utf-8'],
     ['premium-layout.css', 'text/css; charset=utf-8'],
@@ -150,9 +176,11 @@ function buildStaticMap() {
     map.set(`/resources/${name}`, entry);
     map.set(`/voyage/resources/${name}`, entry);
   }
-  map.set('/', map.get('/index.html'));
-  map.set('/voyage', map.get('/voyage/index.html'));
-  map.set('/voyage/', map.get('/voyage/index.html'));
+  map.set('/', map.get('/launch.html'));
+  map.set('/index.html', map.get('/launch.html'));
+  map.set('/voyage/index.html', map.get('/launch.html'));
+  map.set('/voyage', map.get('/launch.html'));
+  map.set('/voyage/', map.get('/launch.html'));
   return map;
 }
 

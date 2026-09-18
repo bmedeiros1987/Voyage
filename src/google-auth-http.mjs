@@ -14,6 +14,10 @@ const STATE_TTL_SECONDS = 600;
 export async function handleGoogleAuthHttp(req, res, path, { config, persistence, fetchImpl = fetch } = {}) {
   if (req?.method !== 'GET' || (path !== START_PATH && path !== CALLBACK_PATH)) return false;
   requireRuntime(config, persistence);
+  if (config.nodeEnv === 'production') {
+    const app = new URL(config.appUrl); const callback = new URL(config.google.redirectUri);
+    if (app.protocol !== 'https:' || callback.origin !== app.origin || callback.pathname !== CALLBACK_PATH || app.username || app.password || callback.username || callback.password) throw namedError('google_oauth_origin_invalid', 503);
+  }
 
   if (path === START_PATH) {
     const requestUrl = new URL(req.url, 'http://localhost');
@@ -48,6 +52,7 @@ export async function handleGoogleAuthHttp(req, res, path, { config, persistence
   if (!code) throw namedError('oauth_code_required');
   const statePayload = verifySignedOAuthState(state, config.session.signingKey);
   const purpose = normalizePurpose(statePayload.purpose);
+  if (purpose === 'gmail' && config.google.gmailRuntimeEnabled === false) throw namedError('gmail_unavailable', 503);
 
   const tokens = await exchangeGoogleAuthorizationCode({
     clientId: config.google.clientId,

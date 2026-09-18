@@ -48,7 +48,7 @@ test('availability CTA is wired to the real preview route with explicit failure 
 
 test('offline shell caches Adaptive Home assets and expires old shell versions', async () => {
   const serviceWorker = await text('app/www/service-worker.js');
-  assert.match(serviceWorker, /voyage-shell-v13-local-retention/);
+  assert.match(serviceWorker, /voyage-shell-v14-operational/);
   assert.match(serviceWorker, /'\.\/adaptive-home\.css'/);
   assert.match(serviceWorker, /'\.\/adaptive-home\.js'/);
   assert.match(serviceWorker, /SHARED_PDF_TTL_MS\s*=\s*30\s*\*\s*60\s*\*\s*1000/);
@@ -65,3 +65,4 @@ test('keyboard and assistive technology controls have named targets', async () =
   assert.match(script, /aria-label="Mover para cima"/);
   assert.match(script, /aria-label="Mover para baixo"/);
 });
+
