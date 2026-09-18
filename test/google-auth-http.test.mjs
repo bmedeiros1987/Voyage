@@ -41,6 +41,31 @@ function stateCookie(state) {
   return `voyage_oauth_state=${encodeURIComponent(fingerprint)}`;
 }
 
+test('OAuth preserves up to four pending tabs and consumes only the completed state', async () => {
+  const options = { config: runtimeConfig(), persistence: createMemoryPersistence() };
+  let cookie = '';
+  const states = [];
+  for (let index = 0; index < 5; index++) {
+    const res = responseStub();
+    await handleGoogleAuthHttp({ method: 'GET', url: '/api/v1/auth/google/start', headers: { cookie } }, res, '/api/v1/auth/google/start', options);
+    states.push(new URL(res.getHeader('location')).searchParams.get('state'));
+    cookie = res.getHeader('set-cookie').split(';')[0];
+    assert.match(res.getHeader('set-cookie'), /Path=\/api\/v1\/auth\/google;/);
+  }
+  const callback = async state => {
+    const res = responseStub();
+    await handleGoogleAuthHttp({ method: 'GET', url: `/api/v1/auth/google/callback?error=access_denied&state=${encodeURIComponent(state)}`, headers: { cookie } }, res, '/api/v1/auth/google/callback', options);
+    cookie = res.getHeader('set-cookie').split(';')[0];
+    return res;
+  };
+  await assert.rejects(callback(states[0]), /oauth_state_browser_mismatch/);
+  await callback(states[1]);
+  await assert.rejects(callback(states[1]), /oauth_state_browser_mismatch/);
+  await callback(states[3]);
+  await callback(states[2]);
+  assert.match((await callback(states[4])).getHeader('set-cookie'), /Max-Age=0/);
+});
+
 test('Google start route creates a signed Gmail redirect and browser-bound state cookie without leaking server secret', async () => {
   const persistence = createMemoryPersistence();
   const req = { method: 'GET', url: '/api/v1/auth/google/start?purpose=gmail', headers: {} };

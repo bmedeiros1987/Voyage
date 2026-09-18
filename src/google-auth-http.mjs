@@ -25,7 +25,7 @@ export async function handleGoogleAuthHttp(req, res, path, { config, persistence
     if (purpose === 'gmail' && !config.google.gmailConfigured) throw namedError('google_oauth_not_configured', 503);
 
     const state = createSignedOAuthState({ purpose }, config.session.signingKey, { ttlSeconds: STATE_TTL_SECONDS });
-    setStateCookie(res, fingerprintState(state));
+    setStateCookie(res, [...pendingStates(req).slice(-3), fingerprintState(state)].join('.'));
     const authorizationUrl = buildGoogleAuthorizationUrl({
       clientId: config.google.clientId,
       redirectUri: config.google.redirectUri,
@@ -40,7 +40,9 @@ export async function handleGoogleAuthHttp(req, res, path, { config, persistence
   const requestUrl = new URL(req.url, 'http://localhost');
   const state = requestUrl.searchParams.get('state');
   verifyBrowserState(req, state);
-  clearStateCookie(res);
+  const remainingStates = pendingStates(req).filter(value => value !== fingerprintState(state));
+  if (remainingStates.length) setStateCookie(res, remainingStates.join('.'));
+  else clearStateCookie(res);
 
   const providerError = requestUrl.searchParams.get('error');
   if (providerError) {
@@ -139,12 +141,13 @@ function fingerprintState(state) {
 
 function verifyBrowserState(req, state) {
   if (typeof state !== 'string' || !state) throw namedError('oauth_state_required');
-  const expected = readCookie(req, STATE_COOKIE);
-  if (!expected) throw namedError('oauth_state_browser_mismatch', 400);
   const actual = fingerprintState(state);
-  const left = Buffer.from(expected);
   const right = Buffer.from(actual);
-  if (left.length !== right.length || !timingSafeEqual(left, right)) throw namedError('oauth_state_browser_mismatch', 400);
+  if (!pendingStates(req).some(expected => timingSafeEqual(Buffer.from(expected), right))) throw namedError('oauth_state_browser_mismatch', 400);
+}
+
+function pendingStates(req) {
+  return (readCookie(req, STATE_COOKIE) || '').split('.').filter(value => /^[A-Za-z0-9_-]{43}$/.test(value)).slice(-4);
 }
 
 function readCookie(req, name) {
@@ -161,11 +164,11 @@ function readCookie(req, name) {
 }
 
 function setStateCookie(res, value) {
-  res.setHeader('Set-Cookie', `${STATE_COOKIE}=${encodeURIComponent(value)}; Path=${CALLBACK_PATH}; Max-Age=${STATE_TTL_SECONDS}; HttpOnly; Secure; SameSite=Lax`);
+  res.setHeader('Set-Cookie', `${STATE_COOKIE}=${encodeURIComponent(value)}; Path=/api/v1/auth/google; Max-Age=${STATE_TTL_SECONDS}; HttpOnly; Secure; SameSite=Lax`);
 }
 
 function clearStateCookie(res) {
-  res.setHeader('Set-Cookie', `${STATE_COOKIE}=; Path=${CALLBACK_PATH}; Max-Age=0; HttpOnly; Secure; SameSite=Lax`);
+  res.setHeader('Set-Cookie', `${STATE_COOKIE}=; Path=/api/v1/auth/google; Max-Age=0; HttpOnly; Secure; SameSite=Lax`);
 }
 
 function safeProviderError(value) {
