@@ -23,7 +23,7 @@ export function createMysqlTidbExecute({ databaseUrl, driverLoader = defaultMysq
   const config = parseTidbDatabaseUrl(databaseUrl);
   let poolPromise = null;
 
-  return async function execute(sql, params = []) {
+  async function getPool() {
     if (!poolPromise) {
       poolPromise = Promise.resolve()
         .then(() => driverLoader())
@@ -50,8 +50,22 @@ export function createMysqlTidbExecute({ databaseUrl, driverLoader = defaultMysq
 
     const pool = await poolPromise;
     if (!pool || typeof pool.execute !== 'function') throw namedError('tidb_driver_invalid', 503);
-    return pool.execute(sql, params);
+    return pool;
+  }
+  const execute = async (sql, params = []) => (await getPool()).execute(sql, params);
+  execute.transaction = async (work) => {
+    const connection = await (await getPool()).getConnection();
+    try {
+      await connection.beginTransaction();
+      const result = await work((sql, params = []) => connection.execute(sql, params));
+      await connection.commit();
+      return result;
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally { connection.release(); }
   };
+  return execute;
 }
 
 export function parseTidbDatabaseUrl(databaseUrl) {
@@ -237,6 +251,9 @@ export function createTidbPersistence({ execute } = {}) {
       return Number(result?.affectedRows || 0) > 0;
     },
     async upsertGoogleIdentity(input) {
+      if (typeof execute.transaction !== 'function') throw namedError('identity_transaction_required', 503);
+      try {
+        return await execute.transaction(async (execute) => {
       const identity = normalizeGoogleIdentityInput(input);
       const [existingRows] = await execute(
         `SELECT i.user_id AS userId,u.email,u.display_name AS displayName,u.avatar_url AS avatarUrl
@@ -280,6 +297,11 @@ export function createTidbPersistence({ execute } = {}) {
         displayName: identity.displayName,
         avatarUrl: identity.avatarUrl
       };
+        });
+      } catch (error) {
+        if (error?.code === 'ER_DUP_ENTRY') throw namedError('identity_link_confirmation_required', 409);
+        throw error;
+      }
     },
     async upsertGoogleConnection(input) {
       const connection = normalizeGoogleConnectionInput(input);

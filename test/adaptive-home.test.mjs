@@ -65,4 +65,3 @@ test('keyboard and assistive technology controls have named targets', async () =
   assert.match(script, /aria-label="Mover para cima"/);
   assert.match(script, /aria-label="Mover para baixo"/);
 });
-
