@@ -1,4 +1,4 @@
-const CACHE = 'voyage-shell-v14-operational';
+const CACHE = 'voyage-shell-v15-operational-review';
 const SHARED_PDF_CACHE = 'voyage-shared-pdf-v1';
 const SHARED_PDF_PREFIX = '/__voyage_shared_pdf__/';
 const SHARED_PDF_TTL_MS = 30 * 60 * 1000;

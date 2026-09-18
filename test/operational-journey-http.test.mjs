@@ -6,6 +6,7 @@ import { createMemoryPersistence } from '../src/persistence.mjs';
 import { handleGoogleAuthHttp } from '../src/google-auth-http.mjs';
 import { handleJourneyHttp } from '../src/journey-http.mjs';
 import { authenticatePersistedSession } from '../src/auth-session.mjs';
+import { reviewFields } from '../app/www/launch.js';
 
 const key = 'test-only-voyage-session-key-32-bytes';
 test('HTTP login → PDF → review → journey → new login; rejects other users and revoked sessions', async (t) => {
@@ -40,11 +41,16 @@ test('HTTP login → PDF → review → journey → new login; rejects other use
   let token = await login();
   const call = (path, options = {}) => fetch(base + '/api/v1/journeys' + path, { ...options, headers: { Authorization: `Bearer ${token}`, ...options.headers } });
   assert.equal((await fetch(base + '/api/v1/journeys')).status, 401);
-  const pdf = Buffer.from('%PDF-1.4\n1 0 obj\n<< /Length 100 >>\nstream\nBT (Boarding pass LATAM Flight LA1234 GRU to GIG 2027-05-12 Confirmation ABC123) Tj ET\nendstream\nendobj\n%%EOF');
+  const pdf = Buffer.from('%PDF-1.4\n1 0 obj\n<< /Length 100 >>\nstream\nBT (Boarding pass LATAM Flight LA1234 GRU to GIG 18/09/2026 10:20 Confirmation ABC123) Tj ET\nendstream\nendobj\n%%EOF');
   const uploaded = await call('/imports/pdf', { method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: pdf });
   assert.equal(uploaded.status, 201); const imported = await uploaded.json();
   assert.ok(imported.textPreview.includes('Boarding pass'));
-  const body = { importId: imported.importId, title: 'Minha viagem', facts: { flightNumber: 'LA1234', notes: 'Conferido no documento original' }, confirmed: true };
+  const reviewed = Object.fromEntries(reviewFields(imported.facts).map(({ key, value }) => [key, value]));
+  assert.equal(reviewed.route_origin, 'GRU');
+  assert.equal(reviewed.route_destination, 'GIG');
+  assert.equal(reviewed.dateMentions_1, '18/09/2026');
+  assert.equal(reviewed.timeMentions_1, '10:20');
+  const body = { importId: imported.importId, title: 'Minha viagem', facts: { ...reviewed, flightNumber: 'LA1234', route_destination: 'BSB', timeMentions_1: '11:20', notes: 'Conferido no documento original' }, confirmed: true };
   const post = (value) => call('', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
   assert.equal((await post({ ...body, confirmed: false })).status, 400);
   assert.equal((await post({ ...body, facts: { flightNumber: {} } })).status, 400);
@@ -62,5 +68,10 @@ test('HTTP login → PDF → review → journey → new login; rejects other use
   subject = 'traveler-a'; token = await login();
   const reopened = await (await call('/' + journey.id)).json();
   assert.equal(reopened.facts.flightNumber, 'LA1234'); assert.equal(reopened.id, journey.id);
+  assert.equal(reopened.facts.route_origin, 'GRU');
+  assert.equal(reopened.facts.route_destination, 'BSB');
+  assert.equal(reopened.facts.dateMentions_1, '18/09/2026');
+  assert.equal(reopened.facts.timeMentions_1, '11:20');
   assert.deepEqual(reopened.extractedFacts, imported.facts);
+  assert.equal(reopened.extractedFacts.route.destination, 'GIG');
 });
