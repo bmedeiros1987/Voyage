@@ -17,6 +17,7 @@ const CORE = [
   './responsive-hardening.css',
   './imports.css',
   './api-origin.js',
+  './api-origin.js?v=operational-1',
   './retention-policy.js',
   './signature-experience.js',
   './adaptive-home.js',
