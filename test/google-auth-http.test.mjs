@@ -38,39 +38,85 @@ function responseStub() {
 
 function stateCookie(state) {
   const fingerprint = createHash('sha256').update(state).digest('base64url');
-  return `voyage_oauth_state=${encodeURIComponent(fingerprint)}`;
+  return `__Host-voyage_oauth_${fingerprint}=${fingerprint}`;
 }
 
-test('OAuth preserves up to four pending tabs and consumes only the completed state', async () => {
+function applyCookie(jar, header) {
+  const [pair] = header.split(';');
+  const index = pair.indexOf('=');
+  const name = pair.slice(0, index);
+  if (/Max-Age=0(?:;|$)/.test(header)) jar.delete(name);
+  else jar.set(name, pair.slice(index + 1));
+}
+const cookieHeader = jar => [...jar].map(([name, value]) => `${name}=${value}`).join('; ');
+async function start(options, cookie = '') {
+  const res = responseStub();
+  await handleGoogleAuthHttp({ method: 'GET', url: '/api/v1/auth/google/start', headers: { cookie } }, res, '/api/v1/auth/google/start', options);
+  return { res, state: new URL(res.getHeader('location')).searchParams.get('state') };
+}
+async function deniedCallback(options, state, cookie) {
+  const res = responseStub();
+  await handleGoogleAuthHttp({ method: 'GET', url: `/api/v1/auth/google/callback?error=access_denied&state=${encodeURIComponent(state)}`, headers: { cookie } }, res, '/api/v1/auth/google/callback', options);
+  return res;
+}
+
+test('simultaneous starts with identical cookie snapshots do not overwrite each other', async () => {
   const options = { config: runtimeConfig(), persistence: createMemoryPersistence() };
-  let cookie = '';
-  const states = [];
-  for (let index = 0; index < 5; index++) {
-    const res = responseStub();
-    await handleGoogleAuthHttp({ method: 'GET', url: '/api/v1/auth/google/start', headers: { cookie } }, res, '/api/v1/auth/google/start', options);
-    states.push(new URL(res.getHeader('location')).searchParams.get('state'));
-    cookie = res.getHeader('set-cookie').split(';')[0];
-    assert.match(res.getHeader('set-cookie'), /Path=\/api\/v1\/auth\/google;/);
+  const [first, second] = await Promise.all([start(options, ''), start(options, '')]);
+  assert.notEqual(first.state, second.state);
+  for (const responses of [[first, second], [second, first]]) {
+    const jar = new Map();
+    responses.forEach(flow => applyCookie(jar, flow.res.getHeader('set-cookie')));
+    assert.equal(jar.size, 2);
+    const beforeCallbacks = cookieHeader(jar);
+    // Both callbacks also see the same pre-response snapshot. Clearing one must
+    // neither discard nor resurrect its sibling, regardless of response order.
+    const completed = await Promise.all([deniedCallback(options, first.state, beforeCallbacks), deniedCallback(options, second.state, beforeCallbacks)]);
+    completed.reverse().forEach(res => { assert.equal(res.statusCode, 302); applyCookie(jar, res.getHeader('set-cookie')); });
+    assert.equal(jar.size, 0);
+    await assert.rejects(deniedCallback(options, first.state, cookieHeader(jar)), /oauth_state_browser_mismatch/);
   }
-  const callback = async state => {
-    const res = responseStub();
-    await handleGoogleAuthHttp({ method: 'GET', url: `/api/v1/auth/google/callback?error=access_denied&state=${encodeURIComponent(state)}`, headers: { cookie } }, res, '/api/v1/auth/google/callback', options);
-    cookie = res.getHeader('set-cookie').split(';')[0];
-    return res;
-  };
-  await assert.rejects(callback(states[0]), /oauth_state_browser_mismatch/);
-  await callback(states[1]);
-  await assert.rejects(callback(states[1]), /oauth_state_browser_mismatch/);
-  await callback(states[3]);
-  await callback(states[2]);
-  assert.match((await callback(states[4])).getHeader('set-cookie'), /Max-Age=0/);
+});
+
+test('observed pending-flow limit refuses new starts without evicting valid cookies', async () => {
+  const options = { config: runtimeConfig(), persistence: createMemoryPersistence() };
+  const jar = new Map(); const flows = [];
+  for (let i = 0; i < 4; i++) {
+    const flow = await start(options, cookieHeader(jar)); flows.push(flow);
+    const header = flow.res.getHeader('set-cookie');
+    assert.match(header, /^__Host-voyage_oauth_[A-Za-z0-9_-]{43}=/);
+    assert.match(header, /Path=\/; Max-Age=600; HttpOnly; Secure; SameSite=Lax/);
+    assert.doesNotMatch(header, /Domain=/i);
+    applyCookie(jar, header);
+  }
+  const refused = responseStub();
+  await assert.rejects(() => handleGoogleAuthHttp({ method: 'GET', url: '/api/v1/auth/google/start', headers: { cookie: cookieHeader(jar) } }, refused, '/api/v1/auth/google/start', options), error => error.code === 'oauth_pending_limit' && error.statusCode === 429);
+  assert.equal(refused.getHeader('set-cookie'), undefined);
+  const completed = await deniedCallback(options, flows[0].state, cookieHeader(jar));
+  applyCookie(jar, completed.getHeader('set-cookie'));
+  assert.equal(jar.size, 3);
+  await start(options, cookieHeader(jar));
+  for (const flow of flows.slice(1)) {
+    const res = await deniedCallback(options, flow.state, cookieHeader(jar));
+    applyCookie(jar, res.getHeader('set-cookie'));
+  }
+  assert.equal(jar.size, 0);
+});
+
+test('even a provider error validates signed-state expiry and the correct browser cookie', async () => {
+  let fetched = false;
+  const options = { config: runtimeConfig(), persistence: createMemoryPersistence(), fetchImpl: async () => { fetched = true; throw new Error('must not fetch'); } };
+  const expired = createSignedOAuthState({ purpose: 'login' }, SIGNING_KEY, { ttlSeconds: 600, now: Date.now() - 620000 });
+  await assert.rejects(deniedCallback(options, expired, stateCookie(expired)), /oauth_state_expired/);
+  const first = await start(options); const second = await start(options);
+  await assert.rejects(deniedCallback(options, first.state, stateCookie(second.state)), /oauth_state_browser_mismatch/);
+  assert.equal(fetched, false);
 });
 
 test('Google start route creates a signed Gmail redirect and browser-bound state cookie without leaking server secret', async () => {
   const persistence = createMemoryPersistence();
   const req = { method: 'GET', url: '/api/v1/auth/google/start?purpose=gmail', headers: {} };
   const res = responseStub();
-
   const handled = await handleGoogleAuthHttp(req, res, '/api/v1/auth/google/start', { config: runtimeConfig(), persistence });
   assert.equal(handled, true);
   assert.equal(res.statusCode, 302);
@@ -82,9 +128,8 @@ test('Google start route creates a signed Gmail redirect and browser-bound state
   assert.equal(location.searchParams.get('prompt'), 'consent');
   assert.match(location.searchParams.get('scope'), /gmail\.readonly/);
   assert.equal(location.toString().includes('server-only-client-secret'), false);
-
   const cookie = res.getHeader('set-cookie');
-  assert.match(cookie, /^voyage_oauth_state=/);
+  assert.match(cookie, /^__Host-voyage_oauth_[A-Za-z0-9_-]{43}=/);
   assert.match(cookie, /HttpOnly/);
   assert.match(cookie, /Secure/);
   assert.match(cookie, /SameSite=Lax/);
@@ -94,51 +139,30 @@ test('Google start route creates a signed Gmail redirect and browser-bound state
 test('Gmail callback persists verified Google subject, encrypted refresh token, consent and Voyage session', async () => {
   const persistence = createMemoryPersistence();
   const state = createSignedOAuthState({ purpose: 'gmail' }, SIGNING_KEY, { ttlSeconds: 600 });
-  const req = {
-    method: 'GET',
-    url: `/api/v1/auth/google/callback?code=code-1&state=${encodeURIComponent(state)}`,
-    headers: { cookie: stateCookie(state) }
-  };
+  const req = { method: 'GET', url: `/api/v1/auth/google/callback?code=code-1&state=${encodeURIComponent(state)}`, headers: { cookie: stateCookie(state) } };
   const res = responseStub();
   const fetchImpl = async (url, init = {}) => {
     if (url === 'https://oauth2.googleapis.com/token') {
       const form = new URLSearchParams(init.body);
       assert.equal(form.get('client_secret'), 'server-only-client-secret');
-      return new Response(JSON.stringify({
-        access_token: 'access-token',
-        refresh_token: 'raw-refresh-token',
-        expires_in: 3600,
-        scope: 'openid email profile https://www.googleapis.com/auth/gmail.readonly',
-        token_type: 'Bearer'
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ access_token: 'access-token', refresh_token: 'raw-refresh-token', expires_in: 3600, scope: 'openid email profile https://www.googleapis.com/auth/gmail.readonly', token_type: 'Bearer' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (url === 'https://openidconnect.googleapis.com/v1/userinfo') {
       assert.equal(init.headers.Authorization, 'Bearer access-token');
-      return new Response(JSON.stringify({
-        sub: 'google-subject-123',
-        email: 'traveler@example.com',
-        email_verified: true,
-        name: 'Traveler',
-        picture: 'https://example.com/avatar.png'
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ sub: 'google-subject-123', email: 'traveler@example.com', email_verified: true, name: 'Traveler', picture: 'https://example.com/avatar.png' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     throw new Error(`unexpected fetch ${url}`);
   };
-
-  const handled = await handleGoogleAuthHttp(req, res, '/api/v1/auth/google/callback', {
-    config: runtimeConfig(), persistence, fetchImpl
-  });
+  const handled = await handleGoogleAuthHttp(req, res, '/api/v1/auth/google/callback', { config: runtimeConfig(), persistence, fetchImpl });
   assert.equal(handled, true);
   assert.equal(res.statusCode, 302);
   assert.match(res.getHeader('set-cookie'), /Max-Age=0/);
-
   const returned = new URL(res.getHeader('location'));
   const fragment = new URLSearchParams(returned.hash.slice(1));
   assert.equal(fragment.get('gmail'), 'connected');
   assert.equal(returned.search, '');
   assert.equal(returned.toString().includes('raw-refresh-token'), false);
   assert.equal(returned.toString().includes('server-only-client-secret'), false);
-
   const sessionToken = fragment.get('voyage_session');
   const session = verifySessionToken(sessionToken, SIGNING_KEY);
   const connection = await persistence.getGoogleConnectionByUserId(session.userId);
@@ -154,28 +178,8 @@ test('OAuth callback fails closed when the browser state cookie is missing or mi
   const state = createSignedOAuthState({ purpose: 'login' }, SIGNING_KEY);
   const res = responseStub();
   let fetchCalled = false;
-
-  await assert.rejects(
-    () => handleGoogleAuthHttp({
-      method: 'GET',
-      url: `/api/v1/auth/google/callback?code=code-1&state=${encodeURIComponent(state)}`,
-      headers: {}
-    }, res, '/api/v1/auth/google/callback', {
-      config: runtimeConfig(), persistence, fetchImpl: async () => { fetchCalled = true; throw new Error('must not fetch'); }
-    }),
-    /oauth_state_browser_mismatch/
-  );
-
-  await assert.rejects(
-    () => handleGoogleAuthHttp({
-      method: 'GET',
-      url: `/api/v1/auth/google/callback?code=code-1&state=${encodeURIComponent(state)}`,
-      headers: { cookie: 'voyage_oauth_state=wrong' }
-    }, responseStub(), '/api/v1/auth/google/callback', {
-      config: runtimeConfig(), persistence, fetchImpl: async () => { fetchCalled = true; throw new Error('must not fetch'); }
-    }),
-    /oauth_state_browser_mismatch/
-  );
+  await assert.rejects(() => handleGoogleAuthHttp({ method: 'GET', url: `/api/v1/auth/google/callback?code=code-1&state=${encodeURIComponent(state)}`, headers: {} }, res, '/api/v1/auth/google/callback', { config: runtimeConfig(), persistence, fetchImpl: async () => { fetchCalled = true; throw new Error('must not fetch'); } }), /oauth_state_browser_mismatch/);
+  await assert.rejects(() => handleGoogleAuthHttp({ method: 'GET', url: `/api/v1/auth/google/callback?code=code-1&state=${encodeURIComponent(state)}`, headers: { cookie: stateCookie(state).replace(/=.*/, '=wrong') } }, responseStub(), '/api/v1/auth/google/callback', { config: runtimeConfig(), persistence, fetchImpl: async () => { fetchCalled = true; throw new Error('must not fetch'); } }), /oauth_state_browser_mismatch/);
   assert.equal(fetchCalled, false);
 });
 
@@ -184,42 +188,18 @@ test('OAuth callback rejects a tampered signed state even if its browser fingerp
   const good = createSignedOAuthState({ purpose: 'login' }, SIGNING_KEY);
   const tampered = `${good.slice(0, -1)}${good.endsWith('A') ? 'B' : 'A'}`;
   let fetchCalled = false;
-  await assert.rejects(
-    () => handleGoogleAuthHttp({
-      method: 'GET',
-      url: `/api/v1/auth/google/callback?code=code-1&state=${encodeURIComponent(tampered)}`,
-      headers: { cookie: stateCookie(tampered) }
-    }, responseStub(), '/api/v1/auth/google/callback', {
-      config: runtimeConfig(), persistence, fetchImpl: async () => { fetchCalled = true; throw new Error('must not fetch'); }
-    }),
-    /oauth_state_signature_invalid/
-  );
+  await assert.rejects(() => handleGoogleAuthHttp({ method: 'GET', url: `/api/v1/auth/google/callback?code=code-1&state=${encodeURIComponent(tampered)}`, headers: { cookie: stateCookie(tampered) } }, responseStub(), '/api/v1/auth/google/callback', { config: runtimeConfig(), persistence, fetchImpl: async () => { fetchCalled = true; throw new Error('must not fetch'); } }), /oauth_state_signature_invalid/);
   assert.equal(fetchCalled, false);
 });
 
 test('identity persistence does not silently link a second Google subject by email alone', async () => {
   const persistence = createMemoryPersistence();
-  await persistence.upsertGoogleIdentity({
-    googleSubject: 'subject-one', email: 'same@example.com', emailVerified: true, displayName: 'One'
-  });
-  await assert.rejects(
-    () => persistence.upsertGoogleIdentity({
-      googleSubject: 'subject-two', email: 'same@example.com', emailVerified: true, displayName: 'Two'
-    }),
-    /identity_link_confirmation_required/
-  );
+  await persistence.upsertGoogleIdentity({ googleSubject: 'subject-one', email: 'same@example.com', emailVerified: true, displayName: 'One' });
+  await assert.rejects(() => persistence.upsertGoogleIdentity({ googleSubject: 'subject-two', email: 'same@example.com', emailVerified: true, displayName: 'Two' }), /identity_link_confirmation_required/);
 });
 
 test('public runtime config never exposes OAuth client id, client secret, redirect or token key', () => {
-  const config = getRuntimeConfig({
-    NODE_ENV: 'development',
-    APP_URL: 'https://voyage-api-okay.onrender.com/voyage',
-    SESSION_SIGNING_KEY: SIGNING_KEY,
-    GOOGLE_CLIENT_ID: '627296893301-client.apps.googleusercontent.com',
-    GOOGLE_CLIENT_SECRET: 'private-secret',
-    GOOGLE_REDIRECT_URI: 'https://voyage-api-okay.onrender.com/api/v1/auth/google/callback',
-    TOKEN_ENCRYPTION_KEY: TOKEN_KEY
-  });
+  const config = getRuntimeConfig({ NODE_ENV: 'development', APP_URL: 'https://voyage-api-okay.onrender.com/voyage', SESSION_SIGNING_KEY: SIGNING_KEY, GOOGLE_CLIENT_ID: '627296893301-client.apps.googleusercontent.com', GOOGLE_CLIENT_SECRET: 'private-secret', GOOGLE_REDIRECT_URI: 'https://voyage-api-okay.onrender.com/api/v1/auth/google/callback', TOKEN_ENCRYPTION_KEY: TOKEN_KEY });
   const exposed = JSON.stringify(publicConfig(config));
   assert.equal(config.google.gmailConfigured, true);
   assert.equal(exposed.includes('private-secret'), false);

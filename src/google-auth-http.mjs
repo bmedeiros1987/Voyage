@@ -8,8 +8,9 @@ const CALLBACK_PATH = '/api/v1/auth/google/callback';
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const USERINFO_ENDPOINT = 'https://openidconnect.googleapis.com/v1/userinfo';
 const CONSENT_POLICY_VERSION = '2026-09';
-const STATE_COOKIE = 'voyage_oauth_state';
+const STATE_COOKIE_PREFIX = '__Host-voyage_oauth_';
 const STATE_TTL_SECONDS = 600;
+const MAX_OBSERVED_PENDING_STATES = 4;
 
 export async function handleGoogleAuthHttp(req, res, path, { config, persistence, fetchImpl = fetch } = {}) {
   if (req?.method !== 'GET' || (path !== START_PATH && path !== CALLBACK_PATH)) return false;
@@ -23,9 +24,13 @@ export async function handleGoogleAuthHttp(req, res, path, { config, persistence
     const requestUrl = new URL(req.url, 'http://localhost');
     const purpose = normalizePurpose(requestUrl.searchParams.get('purpose'));
     if (purpose === 'gmail' && !config.google.gmailConfigured) throw namedError('google_oauth_not_configured', 503);
+    // Admission guard over cookies observed in this request. Simultaneous first
+    // requests can exceed this count; each cookie still expires independently.
+    // Never evict another valid flow to admit a new one.
+    if (pendingStateCount(req) >= MAX_OBSERVED_PENDING_STATES) throw namedError('oauth_pending_limit', 429);
 
     const state = createSignedOAuthState({ purpose }, config.session.signingKey, { ttlSeconds: STATE_TTL_SECONDS });
-    setStateCookie(res, [...pendingStates(req).slice(-3), fingerprintState(state)].join('.'));
+    setStateCookie(res, state);
     const authorizationUrl = buildGoogleAuthorizationUrl({
       clientId: config.google.clientId,
       redirectUri: config.google.redirectUri,
@@ -40,9 +45,8 @@ export async function handleGoogleAuthHttp(req, res, path, { config, persistence
   const requestUrl = new URL(req.url, 'http://localhost');
   const state = requestUrl.searchParams.get('state');
   verifyBrowserState(req, state);
-  const remainingStates = pendingStates(req).filter(value => value !== fingerprintState(state));
-  if (remainingStates.length) setStateCookie(res, remainingStates.join('.'));
-  else clearStateCookie(res);
+  const statePayload = verifySignedOAuthState(state, config.session.signingKey);
+  clearStateCookie(res, state);
 
   const providerError = requestUrl.searchParams.get('error');
   if (providerError) {
@@ -52,7 +56,6 @@ export async function handleGoogleAuthHttp(req, res, path, { config, persistence
 
   const code = requestUrl.searchParams.get('code');
   if (!code) throw namedError('oauth_code_required');
-  const statePayload = verifySignedOAuthState(state, config.session.signingKey);
   const purpose = normalizePurpose(statePayload.purpose);
   if (purpose === 'gmail' && config.google.gmailRuntimeEnabled === false) throw namedError('gmail_unavailable', 503);
 
@@ -142,18 +145,22 @@ function fingerprintState(state) {
 function verifyBrowserState(req, state) {
   if (typeof state !== 'string' || !state) throw namedError('oauth_state_required');
   const actual = fingerprintState(state);
-  const right = Buffer.from(actual);
-  if (!pendingStates(req).some(expected => timingSafeEqual(Buffer.from(expected), right))) throw namedError('oauth_state_browser_mismatch', 400);
+  const expected = readCookie(req, `${STATE_COOKIE_PREFIX}${actual}`);
+  if (!expected || !/^[A-Za-z0-9_-]{43}$/.test(expected) || !timingSafeEqual(Buffer.from(expected), Buffer.from(actual))) throw namedError('oauth_state_browser_mismatch', 400);
 }
 
-function pendingStates(req) {
-  return (readCookie(req, STATE_COOKIE) || '').split('.').filter(value => /^[A-Za-z0-9_-]{43}$/.test(value)).slice(-4);
+function cookiePairs(req) {
+  const raw = Array.isArray(req?.headers?.cookie) ? req.headers.cookie[0] : req?.headers?.cookie;
+  return typeof raw === 'string' ? raw.split(';') : [];
+}
+
+function pendingStateCount(req) {
+  const names = cookiePairs(req).map(pair => pair.slice(0, pair.indexOf('=')).trim()).filter(name => name.startsWith(STATE_COOKIE_PREFIX) && /^[A-Za-z0-9_-]{43}$/.test(name.slice(STATE_COOKIE_PREFIX.length)));
+  return new Set(names).size;
 }
 
 function readCookie(req, name) {
-  const raw = Array.isArray(req?.headers?.cookie) ? req.headers.cookie[0] : req?.headers?.cookie;
-  if (typeof raw !== 'string') return null;
-  for (const pair of raw.split(';')) {
+  for (const pair of cookiePairs(req)) {
     const index = pair.indexOf('=');
     if (index < 0) continue;
     const key = pair.slice(0, index).trim();
@@ -163,12 +170,15 @@ function readCookie(req, name) {
   return null;
 }
 
-function setStateCookie(res, value) {
-  res.setHeader('Set-Cookie', `${STATE_COOKIE}=${encodeURIComponent(value)}; Path=/api/v1/auth/google; Max-Age=${STATE_TTL_SECONDS}; HttpOnly; Secure; SameSite=Lax`);
+function setStateCookie(res, state) {
+  const fingerprint = fingerprintState(state);
+  // Unique host-only names avoid both start/start and callback/callback cookie
+  // read-modify-write races. A response touches its own flow, never its siblings.
+  res.setHeader('Set-Cookie', `${STATE_COOKIE_PREFIX}${fingerprint}=${fingerprint}; Path=/; Max-Age=${STATE_TTL_SECONDS}; HttpOnly; Secure; SameSite=Lax`);
 }
 
-function clearStateCookie(res) {
-  res.setHeader('Set-Cookie', `${STATE_COOKIE}=; Path=/api/v1/auth/google; Max-Age=0; HttpOnly; Secure; SameSite=Lax`);
+function clearStateCookie(res, state) {
+  res.setHeader('Set-Cookie', `${STATE_COOKIE_PREFIX}${fingerprintState(state)}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`);
 }
 
 function safeProviderError(value) {
