@@ -2,6 +2,13 @@ import { access } from 'node:fs/promises';
 
 const required = [
   'src/server.mjs',
+  'src/journey-http.mjs',
+  'src/journey-store.mjs',
+  'src/google-auth-http.mjs',
+  'db/008_operational_journeys.sql',
+  'app/www/launch.html',
+  'app/www/launch.js',
+  'app/www/launch.css',
   'src/config.mjs',
   'src/availability.mjs',
   'src/travel-source.mjs',

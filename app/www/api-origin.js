@@ -11,6 +11,7 @@ const CAPACITOR_SHELL_ORIGINS = new Set([
   'https://localhost',
   'capacitor://localhost'
 ]);
+const SESSION_STORAGE_KEY = 'voyage-session-token';
 
 const API_ORIGIN = resolveTrustedApiOrigin({
   configured: globalThis.document?.querySelector?.('meta[name="voyage-api-origin"]')?.getAttribute('content')?.trim(),
@@ -38,8 +39,26 @@ export function apiUrl(path) {
   return `${API_ORIGIN}${suffix}`;
 }
 
+export function setSessionToken(token) {
+  try {
+    if (typeof token === 'string' && token.trim()) globalThis.sessionStorage?.setItem(SESSION_STORAGE_KEY, token.trim());
+    else globalThis.sessionStorage?.removeItem(SESSION_STORAGE_KEY);
+  } catch {}
+}
+
+export function getSessionToken() {
+  try { return globalThis.sessionStorage?.getItem(SESSION_STORAGE_KEY) || null; } catch { return null; }
+}
+
+export function clearSessionToken() {
+  setSessionToken(null);
+}
+
 export function fetchApi(path, options = {}) {
-  return fetch(apiUrl(path), options);
+  const headers = new Headers(options.headers || {});
+  const sessionToken = getSessionToken();
+  if (sessionToken && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${sessionToken}`);
+  return fetch(apiUrl(path), { ...options, headers });
 }
 
 export { API_ORIGIN };

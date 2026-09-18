@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>Voyage — Minhas jornadas</title><link rel="stylesheet" href="./launch.css"></head>
+<body><main><header><p>VOYAGE</p><h1>Suas viagens, com você.</h1><p>Importe seu documento, confira os dados e guarde sua jornada.</p></header>
+<p id="notice" role="status" aria-live="polite">Verificando acesso…</p>
+<section id="signed-out"><button id="login" hidden>Continuar com Google</button><p>O login não dá acesso ao Gmail. Importação por Gmail indisponível nesta versão.</p></section>
+<section id="signed-in" hidden><button id="logout">Sair</button><h2>Nova jornada</h2><form id="upload"><label>Documento de viagem (PDF, até 15 MB)<input id="pdf" type="file" accept="application/pdf" required></label><button>Importar para revisão</button></form>
+<form id="review" hidden><h2>Confira antes de salvar</h2><p id="review-note"></p><label>Nome da jornada<input id="title" maxlength="180" required></label><div id="facts"></div><label>Observações confirmadas por você<textarea id="notes" maxlength="2000"></textarea></label><label><input id="confirmed" type="checkbox" required>Revisei e confirmo estes dados.</label><button>Salvar jornada</button></form>
+<h2>Minhas jornadas</h2><div id="journeys"></div><article id="detail" hidden></article></section>
+<footer>Os dados extraídos precisam da sua revisão. PDFs digitalizados podem exigir preenchimento manual. Não há monitoramento automático ou concierge autônomo nesta versão.</footer></main><script type="module" src="./launch.js"></script></body></html>
