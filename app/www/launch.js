@@ -1,4 +1,4 @@
-import { apiUrl, fetchApi, setSessionToken, getSessionToken, clearSessionToken } from './api-origin.js';
+import { apiUrl, fetchApi, setSessionToken, getSessionToken, clearSessionToken } from './api-origin.js?v=operational-1';
 const $ = (id) => document.getElementById(id);
 let pendingImport = null;
 const notice = (text) => { $('notice').textContent = text; };
@@ -74,3 +74,9 @@ async function initialize() {
   await request('/api/v1/auth/session'); setSignedIn(true); await listJourneys(); notice('Sua sessão está ativa.');
 }
 initialize().catch((error) => notice(error.message));
+
+// Version the session helper to avoid stale pre-login PWA exports during upgrade.
+if ('serviceWorker' in navigator) {
+  const worker = location.pathname.startsWith('/voyage/') ? '/voyage/service-worker.js' : '/service-worker.js';
+  navigator.serviceWorker.register(worker).catch(() => {});
+}
