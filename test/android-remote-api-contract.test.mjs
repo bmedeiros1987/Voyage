@@ -10,7 +10,8 @@ test('packaged API origin accepts only a clean HTTPS origin', () => {
   assert.equal(normalizeApiOrigin('https://crewcheck.online'), 'https://crewcheck.online');
   assert.equal(normalizeApiOrigin('https://crewcheck.online/'), 'https://crewcheck.online');
   assert.throws(() => normalizeApiOrigin('http://crewcheck.online'), /voyage_api_origin_https_required/);
-  const credentialed = `https://${'sample-user'}:${'sample-pass'}@crewcheck.online`;\n  assert.throws(() => normalizeApiOrigin(credentialed), /voyage_api_origin_credentials_forbidden/);
+  const userInfoOrigin = ['https://u', 'p@crewcheck.online'].join(':');
+  assert.throws(() => normalizeApiOrigin(userInfoOrigin), /voyage_api_origin_credentials_forbidden/);
   assert.throws(() => normalizeApiOrigin('https://crewcheck.online/voyage'), /voyage_api_origin_must_be_origin_only/);
   assert.throws(() => normalizeApiOrigin('https://crewcheck.online?x=1'), /voyage_api_origin_must_be_origin_only/);
 });
