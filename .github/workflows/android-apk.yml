@@ -35,6 +35,8 @@ jobs:
         run: npx cap add android
       - name: Configure direct PDF share target
         run: npm run android:pdf-share
+      - name: Configure operational launch entry
+        run: npm run android:launch-entry
       - name: Generate Voyage icon and splash assets
         run: npm run android:assets
       - name: Configure packaged API origin

@@ -97,15 +97,19 @@ async function dispatchPdfToUniversalImporter(file, sourceMode) {
   input.dataset.sourceMode = sourceMode;
   input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
 
-  // Never leave an own frozen files property behind. Manual selection must keep
-  // using the browser's HTMLInputElement files getter after a shared import.
-  queueMicrotask(() => {
-    try {
-      const descriptor = Object.getOwnPropertyDescriptor(input, 'files');
-      if (descriptor?.configurable) delete input.files;
-      input.value = '';
-    } catch {}
-  });
+  const operationalLaunchInput = input.id === 'pdf';
+  if (!operationalLaunchInput) {
+    queueMicrotask(() => {
+      try {
+        const descriptor = Object.getOwnPropertyDescriptor(input, 'files');
+        if (descriptor?.configurable) delete input.files;
+        input.value = '';
+      } catch {}
+    });
+  } else {
+    const notice = document.getElementById('notice');
+    if (notice) notice.textContent = 'PDF recebido. Importe o documento para revisão quando estiver conectado.';
+  }
 
   const importScreen = document.querySelector('[data-screen="imports"]');
   if (importScreen) {
@@ -117,7 +121,7 @@ async function dispatchPdfToUniversalImporter(file, sourceMode) {
 
 async function waitForImportInput() {
   for (let i = 0; i < 40; i += 1) {
-    const input = document.querySelector('[data-import-files]');
+    const input = document.querySelector('[data-import-files], #pdf');
     if (input) return input;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
