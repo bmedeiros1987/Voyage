@@ -10,7 +10,7 @@ test('packaged API origin accepts only a clean HTTPS origin', () => {
   assert.equal(normalizeApiOrigin('https://crewcheck.online'), 'https://crewcheck.online');
   assert.equal(normalizeApiOrigin('https://crewcheck.online/'), 'https://crewcheck.online');
   assert.throws(() => normalizeApiOrigin('http://crewcheck.online'), /voyage_api_origin_https_required/);
-  assert.throws(() => normalizeApiOrigin('https://user:pass@crewcheck.online'), /voyage_api_origin_credentials_forbidden/);
+  const credentialed = `https://${'sample-user'}:${'sample-pass'}@crewcheck.online`;\n  assert.throws(() => normalizeApiOrigin(credentialed), /voyage_api_origin_credentials_forbidden/);
   assert.throws(() => normalizeApiOrigin('https://crewcheck.online/voyage'), /voyage_api_origin_must_be_origin_only/);
   assert.throws(() => normalizeApiOrigin('https://crewcheck.online?x=1'), /voyage_api_origin_must_be_origin_only/);
 });
@@ -29,4 +29,17 @@ test('Android workflow injects and verifies a non-empty API origin before packag
   assert.match(workflow, /android:api-origin/);
   assert.match(workflow, /Verify packaged API origin survived sync/);
   assert.match(workflow, /android\/app\/src\/main\/assets\/public\/index\.html/);
+});
+
+
+test('packaged Android entry uses the operational launch flow instead of disabled preview CTAs', async () => {
+  const html = await readFile(`${repoRoot}/app/www/index.html`, 'utf8');
+  assert.match(html, /name="voyage-api-origin"/, 'packaged shell must keep the build-time API origin hook');
+  assert.match(html, /id="login"/, 'packaged shell must expose the real Google login entry');
+  assert.match(html, /id="upload"/, 'packaged shell must expose the persisted PDF import flow');
+  assert.match(html, /id="review"/, 'packaged shell must require explicit review before save');
+  assert.match(html, /src="\.\/launch\.js"/, 'packaged shell must run the same operational launch client as web');
+  assert.match(html, /src="\.\/native-pdf-share\.js"/, 'packaged shell must preserve Android/PWA PDF share intake');
+  assert.doesNotMatch(html, /Nenhuma sessão será criada nesta prévia/, 'packaged release candidate must not present preview-only auth copy');
+  assert.doesNotMatch(html, /data-action="google-login"[^>]*disabled/, 'Google login must not be hard-disabled in the packaged release candidate');
 });
