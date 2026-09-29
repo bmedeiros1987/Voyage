@@ -11,6 +11,11 @@ export function getRuntimeConfig(env = process.env) {
   const appName = isConfigured(env.APP_NAME) ? env.APP_NAME.trim() : 'Voyage by CrewCheck';
   const appUrl = isConfigured(env.APP_URL) ? env.APP_URL.trim() : 'https://crewcheck.online/voyage';
   const sessionSigningKey = isConfigured(env.SESSION_SIGNING_KEY) && env.SESSION_SIGNING_KEY.trim().length >= 32 ? env.SESSION_SIGNING_KEY.trim() : null;
+  const googleClientId = isConfigured(env.GOOGLE_CLIENT_ID) ? env.GOOGLE_CLIENT_ID.trim() : null;
+  const googleClientSecret = isConfigured(env.GOOGLE_CLIENT_SECRET) ? env.GOOGLE_CLIENT_SECRET.trim() : null;
+  const googleRedirectUri = isConfigured(env.GOOGLE_REDIRECT_URI) ? env.GOOGLE_REDIRECT_URI.trim() : null;
+  const tokenEncryptionKey = isConfigured(env.TOKEN_ENCRYPTION_KEY) ? env.TOKEN_ENCRYPTION_KEY.trim() : null;
+  const tokenKeyVersion = isConfigured(env.TOKEN_KEY_VERSION) ? env.TOKEN_KEY_VERSION.trim() : 'v1';
   const pubsubServiceAccountEmail = isConfigured(env.GOOGLE_PUBSUB_SERVICE_ACCOUNT_EMAIL)
     ? env.GOOGLE_PUBSUB_SERVICE_ACCOUNT_EMAIL.trim().toLowerCase()
     : null;
@@ -34,13 +39,14 @@ export function getRuntimeConfig(env = process.env) {
       signingKey: sessionSigningKey
     }),
     google: Object.freeze({
-      loginConfigured: isConfigured(env.GOOGLE_CLIENT_ID) && isConfigured(env.GOOGLE_CLIENT_SECRET),
-      redirectConfigured: isConfigured(env.GOOGLE_REDIRECT_URI),
-      gmailConfigured:
-        isConfigured(env.GOOGLE_CLIENT_ID) &&
-        isConfigured(env.GOOGLE_CLIENT_SECRET) &&
-        isConfigured(env.GOOGLE_REDIRECT_URI) &&
-        isConfigured(env.TOKEN_ENCRYPTION_KEY),
+      clientId: googleClientId,
+      clientSecret: googleClientSecret,
+      redirectUri: googleRedirectUri,
+      tokenEncryptionKey,
+      tokenKeyVersion,
+      loginConfigured: Boolean(googleClientId && googleClientSecret && googleRedirectUri && sessionSigningKey),
+      redirectConfigured: Boolean(googleRedirectUri),
+      gmailConfigured: Boolean(googleClientId && googleClientSecret && googleRedirectUri && tokenEncryptionKey),
       pubsubConfigured,
       pubsubAudience: isConfigured(env.GOOGLE_PUBSUB_AUDIENCE) ? env.GOOGLE_PUBSUB_AUDIENCE.trim() : null,
       pubsubServiceAccountEmail

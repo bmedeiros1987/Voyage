@@ -51,3 +51,27 @@ jobs:
         run: |
           grep -q "imports.css" app/www/service-worker.js
           grep -q "import-enhancements.js" app/www/service-worker.js
+
+  persistence-sql:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: voyage-ci-only
+          MYSQL_DATABASE: voyage_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -pvoyage-ci-only"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node --test test/journey-sql-restart.test.mjs
+        env:
+          VOYAGE_TEST_DATABASE_URL: mysql://root:voyage-ci-only@127.0.0.1:3306/voyage_test

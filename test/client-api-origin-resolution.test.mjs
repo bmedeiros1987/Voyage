@@ -54,8 +54,11 @@ test('resolving the API origin never touches storage', async () => {
 test('no client reaches the network without going through the single origin owner', async () => {
   for (const path of ['app/www/app.js', 'app/www/import-enhancements.js', 'app/www/signature-experience.js']) {
     const source = await readFile(new URL(`../${path}`, import.meta.url), 'utf8');
-    assert.match(source, /import \{ fetchApi \} from '\.\/api-origin\.js';/, `${path} must use the shared origin owner`);
+    const ownerImport = source.match(/import\s*\{([^}]+)\}\s*from\s*['"]\.\/api-origin\.js['"];?/);
+    assert.ok(ownerImport, `${path} must import the shared origin owner`);
+    assert.match(ownerImport[1], /(?:^|,)\s*fetchApi\s*(?:,|$)/, `${path} must route network requests through fetchApi`);
     assert.doesNotMatch(source, /localStorage\.getItem\(\s*['"]voyage-api/, `${path} must not read an API base from storage`);
+    assert.doesNotMatch(source.replace(ownerImport[0], ''), /\bfetch\s*\(/, `${path} must not bypass fetchApi with direct fetch()`);
   }
 });
 

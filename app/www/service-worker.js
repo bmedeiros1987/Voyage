@@ -1,10 +1,13 @@
-const CACHE = 'voyage-shell-v13-local-retention';
+const CACHE = 'voyage-shell-v15-operational-review';
 const SHARED_PDF_CACHE = 'voyage-shared-pdf-v1';
 const SHARED_PDF_PREFIX = '/__voyage_shared_pdf__/';
 const SHARED_PDF_TTL_MS = 30 * 60 * 1000;
 const CORE = [
   './',
   './index.html',
+  './launch.html',
+  './launch.js',
+  './launch.css',
   './styles.css',
   './themes.css',
   './premium-layout.css',
@@ -14,6 +17,7 @@ const CORE = [
   './responsive-hardening.css',
   './imports.css',
   './api-origin.js',
+  './api-origin.js?v=operational-1',
   './retention-policy.js',
   './signature-experience.js',
   './adaptive-home.js',
@@ -44,6 +48,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(handlePdfShareTarget(event.request));
     return;
   }
+  if (url.pathname.startsWith('/api/')) return;
   if (event.request.method !== 'GET') return;
 
   if (event.request.mode === 'navigate') {

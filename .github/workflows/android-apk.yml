@@ -37,18 +37,25 @@ jobs:
         run: npm run android:pdf-share
       - name: Generate Voyage icon and splash assets
         run: npm run android:assets
+      - name: Configure operational packaged entry
+        run: npm run android:operational-entry
       - name: Configure packaged API origin
         env:
           VOYAGE_API_ORIGIN: ${{ vars.VOYAGE_API_ORIGIN || 'https://voyage-api-okay.onrender.com' }}
         run: npm run android:api-origin
       - name: Synchronize web assets
         run: npx cap sync android
-      - name: Verify packaged API origin survived sync
+      - name: Verify operational entry and API origin survived sync
         run: |
           PACKAGED_INDEX="android/app/src/main/assets/public/index.html"
           test -f "$PACKAGED_INDEX"
           grep -q 'name="voyage-api-origin"' "$PACKAGED_INDEX"
           ! grep -q 'name="voyage-api-origin" content=""' "$PACKAGED_INDEX"
+          grep -q 'id="login"' "$PACKAGED_INDEX"
+          grep -q 'id="upload"' "$PACKAGED_INDEX"
+          grep -q 'id="review"' "$PACKAGED_INDEX"
+          grep -q 'src="./launch.js"' "$PACKAGED_INDEX"
+          grep -q 'src="./native-pdf-share.js"' "$PACKAGED_INDEX"
       - name: Verify PDF share target survived sync
         run: |
           grep -q 'android.intent.action.SEND' android/app/src/main/AndroidManifest.xml
