@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { injectApiOriginHtml, normalizeApiOrigin } from '../app/scripts/configure-api-origin.mjs';
+import { buildOperationalIndex } from '../app/scripts/configure-operational-entry.mjs';
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
@@ -24,17 +25,19 @@ test('build-time injection replaces exactly one packaged-shell meta tag', () => 
   assert.throws(() => injectApiOriginHtml(`${source}\n${source}`, 'https://crewcheck.online'), /voyage_api_origin_meta_ambiguous/);
 });
 
-test('Android workflow injects and verifies a non-empty API origin before packaging', async () => {
+test('Android workflow builds the operational entry before injecting and verifying the API origin', async () => {
   const workflow = await readFile(`${repoRoot}/.github/workflows/android-apk.yml`, 'utf8');
+  assert.match(workflow, /android:operational-entry/);
   assert.match(workflow, /VOYAGE_API_ORIGIN/);
   assert.match(workflow, /android:api-origin/);
-  assert.match(workflow, /Verify packaged API origin survived sync/);
+  assert.ok(workflow.indexOf('android:operational-entry') < workflow.indexOf('android:api-origin'), 'operational entry must be generated before API-origin injection');
+  assert.match(workflow, /Verify operational entry and API origin survived sync/);
   assert.match(workflow, /android\/app\/src\/main\/assets\/public\/index\.html/);
 });
 
-
 test('packaged Android entry uses the operational launch flow instead of disabled preview CTAs', async () => {
-  const html = await readFile(`${repoRoot}/app/www/index.html`, 'utf8');
+  const launch = await readFile(`${repoRoot}/app/www/launch.html`, 'utf8');
+  const html = buildOperationalIndex(launch);
   assert.match(html, /name="voyage-api-origin"/, 'packaged shell must keep the build-time API origin hook');
   assert.match(html, /id="login"/, 'packaged shell must expose the real Google login entry');
   assert.match(html, /id="upload"/, 'packaged shell must expose the persisted PDF import flow');
