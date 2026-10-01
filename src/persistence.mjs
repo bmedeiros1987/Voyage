@@ -204,6 +204,14 @@ export function createMemoryPersistence() {
     },
     async putMembership(input) {
       const record = normalizeEcosystemMembership(input);
+      if (record.productAccountId) {
+        const collision = [...memberships.values()].find((entry) =>
+          entry.product === record.product &&
+          entry.productAccountId === record.productAccountId &&
+          entry.globalUserId !== record.globalUserId
+        );
+        if (collision) throw namedError('product_account_owner_mismatch', 409);
+      }
       memberships.set(`${record.globalUserId}:${record.product}`, structuredClone(record));
       return structuredClone(record);
     },
@@ -390,18 +398,67 @@ export function createTidbPersistence({ execute } = {}) {
       return record;
     },
     async putMembership(input) {
+      if (typeof execute.transaction !== 'function') throw namedError('membership_transaction_required', 503);
       const record = normalizeEcosystemMembership(input);
-      await execute(
-        `INSERT INTO ecosystem_identities (global_user_id) VALUES (?)
-         ON DUPLICATE KEY UPDATE updated_at=CURRENT_TIMESTAMP(3), deleted_at=NULL`,
-        [record.globalUserId]
-      );
-      await execute(
-        `INSERT INTO ecosystem_memberships (global_user_id,product,state,verified_by_product,product_account_id,crew_role,linked_at,deleted_at)
-         VALUES (?,?,?,?,?,?,?,NULL)
-         ON DUPLICATE KEY UPDATE state=VALUES(state), verified_by_product=VALUES(verified_by_product), product_account_id=VALUES(product_account_id), crew_role=VALUES(crew_role), linked_at=VALUES(linked_at), updated_at=CURRENT_TIMESTAMP(3), deleted_at=NULL`,
-        [record.globalUserId, record.product, record.state, record.verifiedByProduct, record.productAccountId, record.crewRole, nullableSqlDate(record.linkedAt)]
-      );
+      try {
+        await execute.transaction(async (tx) => {
+          if (record.productAccountId) {
+            const [ownerRows] = await tx(
+              `SELECT global_user_id AS globalUserId
+                 FROM ecosystem_memberships
+                WHERE product=? AND product_account_id=? AND deleted_at IS NULL
+                LIMIT 1 FOR UPDATE`,
+              [record.product, record.productAccountId]
+            );
+            const owner = Array.isArray(ownerRows) && ownerRows[0] ? String(ownerRows[0].globalUserId) : null;
+            if (owner && owner !== record.globalUserId) throw namedError('product_account_owner_mismatch', 409);
+          }
+
+          const [membershipRows] = await tx(
+            `SELECT global_user_id AS globalUserId
+               FROM ecosystem_memberships
+              WHERE global_user_id=? AND product=?
+              LIMIT 1 FOR UPDATE`,
+            [record.globalUserId, record.product]
+          );
+
+          await tx(
+            `INSERT INTO ecosystem_identities (global_user_id) VALUES (?)
+             ON DUPLICATE KEY UPDATE updated_at=CURRENT_TIMESTAMP(3), deleted_at=NULL`,
+            [record.globalUserId]
+          );
+
+          const params = [
+            record.state,
+            record.verifiedByProduct,
+            record.productAccountId,
+            record.crewRole,
+            nullableSqlDate(record.linkedAt),
+            record.globalUserId,
+            record.product
+          ];
+
+          if (Array.isArray(membershipRows) && membershipRows[0]) {
+            await tx(
+              `UPDATE ecosystem_memberships
+                  SET state=?, verified_by_product=?, product_account_id=?, crew_role=?, linked_at=?,
+                      updated_at=CURRENT_TIMESTAMP(3), deleted_at=NULL
+                WHERE global_user_id=? AND product=?`,
+              params
+            );
+          } else {
+            await tx(
+              `INSERT INTO ecosystem_memberships
+                 (state,verified_by_product,product_account_id,crew_role,linked_at,global_user_id,product,deleted_at)
+               VALUES (?,?,?,?,?,?,?,NULL)`,
+              params
+            );
+          }
+        });
+      } catch (error) {
+        if (error?.code === 'ER_DUP_ENTRY') throw namedError('product_account_owner_mismatch', 409);
+        throw error;
+      }
       return structuredClone(record);
     },
     async putSubscription(input) {
