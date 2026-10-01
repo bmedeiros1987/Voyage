@@ -9,6 +9,7 @@ This candidate continues clean-port v3 (`ab9e547`) on main `417f475`. The Ecosys
 - Original extraction and user-confirmed facts remain distinct. Raw PDFs and text previews are not persisted by the new path.
 - Gmail remains unavailable at the router, including callback issuance, until separately reviewed.
 - Production disables demo and preview routes. Service worker does not return offline HTML for API/OAuth navigation.
+- Vacation Bridge never accepts CrewCheck vacation facts from the Voyage caller as provider-authenticated data; until a trusted server-side CrewCheck projection source is wired, eligible + consented requests fail closed with `AUTHORIZED_VACATION_WINDOW_SOURCE_REQUIRED`.
 - Additive schemas 007/008 and explicit `npm run migrate:launch` for schemas 001/006/007/008. Requires DATABASE_URL plus VOYAGE_DATABASE_NAME matching the dedicated Voyage database; rejects a CrewCheck database name. This is not an automatic migration on startup.
 
 ## Evidence and gates
