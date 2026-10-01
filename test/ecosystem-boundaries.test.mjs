@@ -25,11 +25,23 @@ test('email alone never links accounts and Gmail scope cannot ride on login', ()
   assert.equal(gmailScope.reason, 'GMAIL_SCOPE_MUST_NOT_RIDE_ON_LOGIN');
 });
 
-test('premium capability never implies CrewCheck/Voyage connection consent', () => {
-  const resolved = resolveEntitlements({ subscriptions:[{ product:'VOYAGE', state:'ACTIVE' }] });
+test('Voyage Premium plus active CrewCheck context grants capability but never implies consent', () => {
+  const identity = buildEcosystemIdentity({ memberships:[{ product:'CREWCHECK', verifiedByProduct:true, active:true }] });
+  const resolved = resolveEntitlements({
+    memberships: identity.memberships,
+    subscriptions:[{ product:'VOYAGE', state:'ACTIVE' }]
+  });
   assert.equal(resolved.unifiedCalendar.entitled, true);
+  assert.deepEqual(resolved.unifiedCalendar.grantedBy, ['VOYAGE_PREMIUM']);
   assert.equal(gateFeature('UNIFIED_CALENDAR',{ entitlements:resolved.entitlements, consents:{} }).reason, 'CONNECTION_CONSENT_REQUIRED');
   assert.equal(gateFeature('UNIFIED_CALENDAR',{ entitlements:resolved.entitlements, consents:{ CREWCHECK_VOYAGE_CONNECTION:true } }).allowed, true);
+});
+
+test('Voyage Premium does not expose CrewCheck calendar capability when no active CrewCheck account exists', () => {
+  const resolved = resolveEntitlements({ subscriptions:[{ product:'VOYAGE', state:'ACTIVE' }] });
+  assert.ok(resolved.entitlements.includes('VOYAGE_PREMIUM'));
+  assert.equal(resolved.entitlements.includes('UNIFIED_CALENDAR'), false);
+  assert.equal(resolved.unifiedCalendar.entitled, false);
 });
 
 test('CrewCheck Premium alone does not silently grant Unified Calendar', () => {
