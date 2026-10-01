@@ -32,6 +32,18 @@ test('premium capability never implies CrewCheck/Voyage connection consent', () 
   assert.equal(gateFeature('UNIFIED_CALENDAR',{ entitlements:resolved.entitlements, consents:{ CREWCHECK_VOYAGE_CONNECTION:true } }).allowed, true);
 });
 
+test('CrewCheck Premium alone does not silently grant Unified Calendar', () => {
+  const identity = buildEcosystemIdentity({ memberships:[{ product:'CREWCHECK', verifiedByProduct:true, active:true }] });
+  const resolved = resolveEntitlements({
+    memberships: identity.memberships,
+    subscriptions:[{ product:'CREWCHECK', state:'ACTIVE' }]
+  });
+  assert.ok(resolved.entitlements.includes('CREWCHECK_PREMIUM'));
+  assert.equal(resolved.entitlements.includes('UNIFIED_CALENDAR'), false);
+  assert.equal(resolved.unifiedCalendar.entitled, false);
+  assert.deepEqual(resolved.unifiedCalendar.grantedBy, []);
+});
+
 test('Vacation Bridge strips operational fields and never exposes itself to non-members', () => {
   const projection = projectAuthorizedWindow({ vacationStart:'2027-05-10T00:00:00Z', vacationEnd:'2027-05-25T00:00:00Z', DUTY_ROSTER:['LA1'], LEGALITY_LIMITS:{ max:100 } });
   assert.deepEqual(projection.rejectedOperationalFields, ['DUTY_ROSTER','LEGALITY_LIMITS']);
