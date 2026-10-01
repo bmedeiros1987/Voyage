@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS ecosystem_memberships (
   updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   deleted_at DATETIME(3) NULL,
   PRIMARY KEY (global_user_id, product),
-  KEY idx_ecosystem_membership_account (product, product_account_id),
+  UNIQUE KEY uq_ecosystem_membership_account_owner (product, product_account_id),
   KEY idx_ecosystem_membership_state (product, state)
 );
 
