@@ -7,6 +7,10 @@ on:
     paths:
       - 'app/**'
       - 'src/server.mjs'
+      - 'src/ecosystem-http.mjs'
+      - 'src/entitlements.mjs'
+      - 'src/calendar-boundary.mjs'
+      - 'src/persistence.mjs'
       - 'test/android-remote-api-contract.test.mjs'
       - 'test/server-security-runtime.test.mjs'
       - '.github/workflows/android-apk.yml'
