@@ -69,9 +69,14 @@ export async function buildRuntimeContext(globalUserId, persistence) {
     ? profile.subscriptions
     : profile.subscriptions.filter((item) => String(item?.product || '').toUpperCase() !== 'CREWCHECK');
   const resolved = resolveEntitlements({ subscriptions: visibleSubscriptions, memberships: identity.memberships });
+  const persistedConsents = Object.fromEntries(
+    profile.consents.map((item) => [item.consentKey, item.granted === true])
+  );
+  // A historical consent record must not reveal an inactive/visitor CrewCheck
+  // relationship back to the Voyage UI.
   const consents = Object.freeze({
-    [CONNECTION_CONSENT]: false,
-    ...Object.fromEntries(profile.consents.map((item) => [item.consentKey, item.granted === true]))
+    ...persistedConsents,
+    [CONNECTION_CONSENT]: hasActiveCrewCheck && persistedConsents[CONNECTION_CONSENT] === true
   });
 
   return Object.freeze({
