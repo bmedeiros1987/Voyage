@@ -58,3 +58,12 @@ test('official shell runtime binds login, persisted session and confirmed PDF jo
   assert.doesNotMatch(runtime, /\/api\/v1\/imports\/pdf/);
   assert.doesNotMatch(runtime, /\/api\/v1\/imports\/manual\/preview/);
 });
+
+
+test('official importer keeps structured extracted facts editable before canonical confirmation', async () => {
+  const importer = await readFile(`${repoRoot}/app/www/import-enhancements.js`, 'utf8');
+  assert.match(importer, /flattenJourneyFacts/);
+  assert.match(importer, /data-reviewed-fact/);
+  assert.match(importer, /confirmJourney/);
+  assert.match(importer, /Jornada confirmada e salva na sua conta/);
+});
