@@ -46,6 +46,32 @@ test('SQL ecosystem profile survives pool recreation and remains owner-scoped', 
       productAccountId: 'synthetic-crew-account',
       crewRole: 'CABIN_CREW'
     });
+    await assert.rejects(
+      () => store.putMembership({
+        globalUserId: otherUserId,
+        product: 'CREWCHECK',
+        active: true,
+        seen: true,
+        verifiedByProduct: true,
+        productAccountId: 'synthetic-crew-account',
+        crewRole: 'CABIN_CREW'
+      }),
+      (error) => {
+        assert.equal(error.code, 'product_account_owner_mismatch');
+        assert.equal(error.statusCode, 409);
+        return true;
+      }
+    );
+
+    await assert.rejects(
+      () => pool.execute(
+        `INSERT INTO ecosystem_memberships (global_user_id,product,state,verified_by_product,product_account_id,crew_role,linked_at,deleted_at)
+         VALUES (?, 'CREWCHECK', 'ACTIVE', TRUE, 'synthetic-crew-account', 'CABIN_CREW', NULL, NULL)`,
+        [otherUserId]
+      ),
+      (error) => error?.code === 'ER_DUP_ENTRY'
+    );
+
     await store.putSubscription({ globalUserId, product: 'VOYAGE', state: 'ACTIVE', source: 'TEST' });
     await store.setConsent(globalUserId, 'CREWCHECK_VOYAGE_CONNECTION', true, { source: 'TEST' });
 
@@ -70,8 +96,8 @@ test('SQL ecosystem profile survives pool recreation and remains owner-scoped', 
   } finally {
     await pool.execute('DELETE FROM user_consents WHERE global_user_id=?', [globalUserId]);
     await pool.execute('DELETE FROM product_subscriptions WHERE global_user_id=?', [globalUserId]);
-    await pool.execute('DELETE FROM ecosystem_memberships WHERE global_user_id=?', [globalUserId]);
-    await pool.execute('DELETE FROM ecosystem_identities WHERE global_user_id=?', [globalUserId]);
+    await pool.execute('DELETE FROM ecosystem_memberships WHERE global_user_id IN (?,?)', [globalUserId, otherUserId]);
+    await pool.execute('DELETE FROM ecosystem_identities WHERE global_user_id IN (?,?)', [globalUserId, otherUserId]);
     await pool.end();
   }
 });
