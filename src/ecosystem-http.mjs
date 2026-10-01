@@ -39,7 +39,8 @@ export async function handleEcosystemHttp(req, res, path, { sessionSigningKey, p
     // Parse the request to preserve JSON/size guards, but never treat caller-
     // supplied CrewCheck facts as provider-authenticated data. Until a trusted
     // server-side CrewCheck projection source is wired, fail closed once the
-    // membership/entitlement/consent gates have passed.
+    // membership/entitlement/consent gates have passed. This route must never
+    // relabel Voyage caller input as CREWCHECK-origin provider evidence.
     await readJson(req, MAX_JSON_BYTES);
     const context = await buildRuntimeContext(auth.userId, persistence);
     const gated = buildVacationBridge({
