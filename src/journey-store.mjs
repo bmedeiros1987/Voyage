@@ -12,6 +12,9 @@ export function createJourneyStore(execute) {
         await execute('SELECT provider,provider_subject FROM identities LIMIT 0');
         await execute('SELECT id,user_id,payload FROM voyage_imports LIMIT 0');
         await execute('SELECT id,user_id,import_id,payload FROM voyage_journeys LIMIT 0');
+        await execute('SELECT global_user_id,product,state FROM ecosystem_memberships LIMIT 0');
+        await execute('SELECT global_user_id,product,state FROM product_subscriptions LIMIT 0');
+        await execute('SELECT global_user_id,consent_key,granted FROM user_consents LIMIT 0');
       }
       return true;
     },
