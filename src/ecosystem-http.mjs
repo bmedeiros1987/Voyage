@@ -36,16 +36,26 @@ export async function handleEcosystemHttp(req, res, path, { sessionSigningKey, p
   // CrewCheck data or the Voyage itinerary, so it has a production-safe path
   // instead of depending on the globally disabled /preview namespace.
   if (req.method === 'POST' && (path === VACATION_BRIDGE_PATH || path === LEGACY_PREVIEW_PATH)) {
-    const body = await readJson(req, MAX_JSON_BYTES);
+    // Parse the request to preserve JSON/size guards, but never treat caller-
+    // supplied CrewCheck facts as provider-authenticated data. Until a trusted
+    // server-side CrewCheck projection source is wired, fail closed once the
+    // membership/entitlement/consent gates have passed.
+    await readJson(req, MAX_JSON_BYTES);
     const context = await buildRuntimeContext(auth.userId, persistence);
-    const result = buildVacationBridge({
+    const gated = buildVacationBridge({
       identity: context.identity,
       entitlements: context.entitlements,
       consents: context.consents,
-      crewCheckWindow: body.crewCheckWindow || {},
-      personalEvents: Array.isArray(body.personalEvents) ? body.personalEvents : []
+      crewCheckWindow: {},
+      personalEvents: []
     });
-    return json(res, 200, result);
+    if (gated.reason !== 'NO_AUTHORIZED_VACATION_WINDOW') return json(res, 200, gated);
+    return json(res, 409, {
+      available: false,
+      reason: 'AUTHORIZED_VACATION_WINDOW_SOURCE_REQUIRED',
+      visibleToUser: true,
+      overlay: null
+    });
   }
 
   return json(res, 404, { error: 'ecosystem_route_not_found' });
