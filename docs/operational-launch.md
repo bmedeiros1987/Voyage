@@ -1,6 +1,6 @@
 # Operational launch candidate
 
-This candidate continues clean-port v3 (`ab9e547`) on main `417f475`. PR #50 is historical; #49 remains independently gated and is not included.
+This candidate continues clean-port v3 (`ab9e547`) on main `417f475`. The Ecosystem Identity / Vacation Bridge runtime is being clean-ported as a stacked follow-up on the same canonical auth/persistence stack; stale PR #49 must not be merged wholesale.
 
 ## Implemented
 - Real-server Google OAuth routing, canonical persisted session check and revocable logout.
@@ -9,7 +9,7 @@ This candidate continues clean-port v3 (`ab9e547`) on main `417f475`. PR #50 is 
 - Original extraction and user-confirmed facts remain distinct. Raw PDFs and text previews are not persisted by the new path.
 - Gmail remains unavailable at the router, including callback issuance, until separately reviewed.
 - Production disables demo and preview routes. Service worker does not return offline HTML for API/OAuth navigation.
-- Additive schema 008 and explicit `npm run migrate:launch` for schemas 001/006/008. Requires DATABASE_URL plus VOYAGE_DATABASE_NAME matching the dedicated Voyage database; rejects a CrewCheck database name. This is not an automatic migration on startup.
+- Additive schemas 007/008 and explicit `npm run migrate:launch` for schemas 001/006/007/008. Requires DATABASE_URL plus VOYAGE_DATABASE_NAME matching the dedicated Voyage database; rejects a CrewCheck database name. This is not an automatic migration on startup.
 
 ## Evidence and gates
 - Local HTTP E2E stubs Google only, and exercises login, PDF parsing, explicit review, duplicate confirmation, two-user isolation, logout/revocation and another login retrieving the same journey.
@@ -23,7 +23,7 @@ This candidate continues clean-port v3 (`ab9e547`) on main `417f475`. PR #50 is 
 2. Dedicated Voyage Google client configuration. Production currently reports googleLogin=not_configured. Never copy credentials from CrewCheck.
 3. Verify dedicated TiDB database and apply additive migrations; execute genuine restart and cross-user E2E against it.
 4. Real Google callback/session, real user-supplied travel PDF, explicit review, save, close/reopen/relogin/read. Local synthetic PDF and stub provider are not this proof.
-5. Verify production entry in the browser at the gated launch SHA. Android still uses its existing shell; release signing/distribution and launch-shell parity remain a separate unmet gate.
+5. Verify production entry in the browser at the gated launch SHA. Android debug now packages the operational login/import/review entry on the same gated SHA; production signing/distribution remains a separate unmet gate.
 6. The existing Render service has a linked environment group named CrewCheck. No group or secrets were modified. Audit and remove unintended inheritance only after verifying all required Voyage settings are independently configured.
 
 Issue #53 stays open. No production-readiness claim is made by this candidate.
