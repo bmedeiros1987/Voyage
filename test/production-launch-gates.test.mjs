@@ -14,6 +14,9 @@ test('production rejects demo/preview routes and fails readiness closed without 
   const base = `http://127.0.0.1:${port}`;
   for (const path of ['/api/v1/trips/demo', '/api/v1/trips/graph/preview', '/api/v1/imports/manual/preview', '/api/v1/imports/pdf']) assert.equal((await fetch(base + path, { method: path.endsWith('demo') ? 'GET' : 'POST' })).status, 404);
   assert.equal((await fetch(base + '/ready')).status, 503);
+  assert.equal((await fetch(base + '/api/v1/ecosystem/context')).status, 503, 'ecosystem context fails closed without durable storage');
+  assert.equal((await fetch(base + '/api/v1/ecosystem/vacation-bridge', { method: 'POST' })).status, 503, 'production-safe projection route is mounted but fails closed without storage');
+  assert.equal((await fetch(base + '/api/v1/ecosystem/vacation-bridge/preview', { method: 'POST' })).status, 404, 'legacy preview path stays disabled in production');
   const status = await (await fetch(base + '/api/v1/auth/google/status')).json();
   assert.equal(status.enabled, false); assert.equal(status.gmailEnabled, false);
   const page = await (await fetch(base + '/')).text();

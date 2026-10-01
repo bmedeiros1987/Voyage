@@ -72,6 +72,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: node --test test/journey-sql-restart.test.mjs
+      - run: node --test test/journey-sql-restart.test.mjs test/ecosystem-sql-restart.test.mjs
         env:
           VOYAGE_TEST_DATABASE_URL: mysql://root:voyage-ci-only@127.0.0.1:3306/voyage_test

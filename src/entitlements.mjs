@@ -1,14 +1,14 @@
 export const ENTITLEMENTS = Object.freeze(['VOYAGE_PREMIUM', 'CREWCHECK_PREMIUM', 'UNIFIED_CALENDAR']);
 export const SUBSCRIPTION_STATES = Object.freeze(['ACTIVE', 'GRACE', 'EXPIRED', 'NONE']);
-const UNIFIED_CALENDAR_SOURCES = Object.freeze(['VOYAGE_PREMIUM', 'CREWCHECK_PREMIUM']);
+const UNIFIED_CALENDAR_SOURCES = Object.freeze(['VOYAGE_PREMIUM']);
 
 export function entitlementCapabilities() {
   return Object.freeze({
     version: '1.0', entitlements: ENTITLEMENTS, subscriptionStates: SUBSCRIPTION_STATES, unifiedCalendarSources: UNIFIED_CALENDAR_SOURCES,
     principles: [
       'A subscription grants capability, never consent. Data access still requires an explicit opt-in.',
-      'Unified Calendar requires at least one applicable premium entitlement, from either product.',
-      'Voyage Premium with CrewCheck Free is a supported combination.',
+      'Unified Calendar is included in Voyage Premium. CrewCheck Premium alone is not treated as a grant unless a future product policy explicitly enables it.',
+      'Voyage Premium with an active CrewCheck membership is sufficient; CrewCheck itself may remain on the Free plan.',
       'Revoking consent disables the connected surface even while the subscription stays active.'
     ]
   });
@@ -28,7 +28,10 @@ export function resolveEntitlements({ subscriptions = [], memberships = {} } = {
     if (subscription.product === 'VOYAGE') held.add('VOYAGE_PREMIUM');
     if (subscription.product === 'CREWCHECK' && memberships?.CREWCHECK?.state === 'ACTIVE') held.add('CREWCHECK_PREMIUM');
   }
-  const unifiedSources = UNIFIED_CALENDAR_SOURCES.filter((source) => held.has(source));
+  const crewCheckAvailable = memberships?.CREWCHECK?.state === 'ACTIVE';
+  const unifiedSources = crewCheckAvailable
+    ? UNIFIED_CALENDAR_SOURCES.filter((source) => held.has(source))
+    : [];
   if (unifiedSources.length > 0) held.add('UNIFIED_CALENDAR');
   return Object.freeze({
     entitlements: Object.freeze([...held].sort()),
