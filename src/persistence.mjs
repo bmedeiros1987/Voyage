@@ -407,6 +407,11 @@ export function createTidbPersistence({ execute } = {}) {
     async putSubscription(input) {
       const record = normalizeProductSubscription(input);
       await execute(
+        `INSERT INTO ecosystem_identities (global_user_id) VALUES (?)
+         ON DUPLICATE KEY UPDATE updated_at=CURRENT_TIMESTAMP(3), deleted_at=NULL`,
+        [record.globalUserId]
+      );
+      await execute(
         `INSERT INTO product_subscriptions (global_user_id,product,state,renews_at,source)
          VALUES (?,?,?,?,?)
          ON DUPLICATE KEY UPDATE state=VALUES(state), renews_at=VALUES(renews_at), source=VALUES(source), updated_at=CURRENT_TIMESTAMP(3)`,
@@ -416,6 +421,11 @@ export function createTidbPersistence({ execute } = {}) {
     },
     async setConsent(globalUserId, consentKey, granted, options = {}) {
       const record = normalizeConsent({ globalUserId, consentKey, granted, ...options });
+      await execute(
+        `INSERT INTO ecosystem_identities (global_user_id) VALUES (?)
+         ON DUPLICATE KEY UPDATE updated_at=CURRENT_TIMESTAMP(3), deleted_at=NULL`,
+        [record.globalUserId]
+      );
       await execute(
         `INSERT INTO user_consents (global_user_id,consent_key,granted,granted_at,revoked_at,source)
          VALUES (?,?,?,?,?,?)
