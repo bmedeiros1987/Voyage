@@ -241,9 +241,12 @@ async function initializeOperationalShell() {
 
   openJourneysScreen();
   await refreshJourneys();
+  document.dispatchEvent(new CustomEvent('voyage:session-ready'));
   showOperationalNotice('Voyage conectado à sua conta.');
 }
 
 if (typeof document !== 'undefined') {
+  document.addEventListener('voyage:journey-confirmed', () => refreshJourneys()
+    .catch((error) => showOperationalNotice(error.message)));
   queueMicrotask(() => initializeOperationalShell().catch((error) => showOperationalNotice(error.message)));
 }
