@@ -414,6 +414,9 @@ export function createTidbPersistence({ execute } = {}) {
             if (owner && owner !== record.globalUserId) throw namedError('product_account_owner_mismatch', 409);
           }
 
+          // Keep the owner lookup + explicit UPDATE/INSERT split. A broad
+          // ON DUPLICATE KEY UPDATE could match the product-account unique key
+          // and mutate another user's membership instead of rejecting reuse.
           const [membershipRows] = await tx(
             `SELECT global_user_id AS globalUserId
                FROM ecosystem_memberships
