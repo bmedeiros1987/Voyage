@@ -167,3 +167,39 @@ test('visitor CrewCheck account stays invisible to the travel user', async () =>
   assert.equal(bridge.json.visibleToUser, false);
   assert.equal(bridge.json.mustNotPromptUser, true);
 });
+
+
+test('product account cannot be linked to two global users in memory', async () => {
+  const persistence = createMemoryPersistence();
+  await persistence.putMembership({
+    globalUserId: 'gid_product_owner',
+    product: 'CREWCHECK',
+    active: true,
+    seen: true,
+    verifiedByProduct: true,
+    productAccountId: 'crew-account-shared',
+    crewRole: 'CABIN_CREW'
+  });
+
+  await assert.rejects(
+    () => persistence.putMembership({
+      globalUserId: 'gid_product_intruder',
+      product: 'CREWCHECK',
+      active: true,
+      seen: true,
+      verifiedByProduct: true,
+      productAccountId: 'crew-account-shared',
+      crewRole: 'CABIN_CREW'
+    }),
+    (error) => {
+      assert.equal(error.code, 'product_account_owner_mismatch');
+      assert.equal(error.statusCode, 409);
+      return true;
+    }
+  );
+
+  const owner = await persistence.getEcosystemProfile('gid_product_owner');
+  const intruder = await persistence.getEcosystemProfile('gid_product_intruder');
+  assert.equal(owner.memberships[0].productAccountId, 'crew-account-shared');
+  assert.deepEqual(intruder.memberships, []);
+});
