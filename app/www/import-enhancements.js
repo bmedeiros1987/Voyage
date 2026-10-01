@@ -1,4 +1,4 @@
-import { fetchApi } from './api-origin.js';
+import { confirmJourney, flattenJourneyFacts, uploadJourneyPdf } from './operational-shell.js';
 import { purgedRecord, rawBlobRetention } from './retention-policy.js';
 
 const DB_NAME = 'voyage-local';
@@ -26,7 +26,9 @@ async function installUniversalImporterEnhancements() {
   document.addEventListener('click', handleEnhancementClick);
   document.addEventListener('submit', handleEnhancementSubmit);
   document.addEventListener('voyage:imports-open', () => purgeExpiredRawBlobs()
-    .then(() => refreshQueueViaScreen())
+    .then(() => syncManualItems())
+    .catch((error) => reportStorageFailure(error)));
+  document.addEventListener('voyage:session-ready', () => syncManualItems()
     .catch((error) => reportStorageFailure(error)));
   window.addEventListener('online', () => purgeExpiredRawBlobs()
     .then(() => syncManualItems())
@@ -125,7 +127,7 @@ function injectManualEntryPanel() {
   panel.className = 'import-panel';
   panel.dataset.manualPanel = '';
   panel.innerHTML = `
-    <div class="import-panel__head"><div class="import-panel__icon">＋</div><div><h2>Adicionar sem PDF</h2><p>Inclua uma reserva ou compromisso mesmo quando você só tiver os dados. Funciona offline e sincroniza depois.</p></div></div>
+    <div class="import-panel__head"><div class="import-panel__icon">＋</div><div><h2>Adicionar sem PDF</h2><p>Inclua uma reserva ou compromisso mesmo quando você só tiver os dados. Fica salvo neste dispositivo; a sincronização manual ainda não está disponível.</p></div></div>
     <button class="button button--outline" type="button" data-import-manual-open>Adicionar item manualmente</button>`;
   stack.insertBefore(panel, gmailPanel);
 }
@@ -227,7 +229,7 @@ async function handleEnhancementSubmit(event) {
       category: manualPayload.category,
       categoryHint: manualPayload.category,
       manualPayload: { ...(existing.manualPayload || {}), ...manualPayload },
-      status: existing.blob ? 'PARSED' : 'LOCAL_MANUAL_QUEUED',
+      status: existing.type === 'application/pdf' ? existing.status : 'LOCAL_MANUAL_QUEUED',
       reviewReasons: [],
       reviewedAt: now,
       userConfirmed: true
@@ -246,11 +248,38 @@ async function handleEnhancementSubmit(event) {
       userConfirmed: true
     };
 
-    await putRecord(record);
-    if (!record.blob) await uploadManual(record).catch(() => false);
+    if (existing?.type === 'application/pdf') {
+      if (!record.backendImportId) throw new Error('Este PDF ainda não foi sincronizado com sua conta.');
+      const facts = {
+        ...flattenJourneyFacts(record.extractedFacts || {}),
+        category: manualPayload.category,
+        ...(manualPayload.startsAt ? { startsAt: manualPayload.startsAt } : {}),
+        ...(manualPayload.endsAt ? { endsAt: manualPayload.endsAt } : {}),
+        ...(manualPayload.location ? { location: manualPayload.location } : {}),
+        ...(manualPayload.provider ? { provider: manualPayload.provider } : {}),
+        ...(manualPayload.confirmationCode ? { confirmationCode: manualPayload.confirmationCode } : {}),
+        ...(manualPayload.notes ? { notes: manualPayload.notes } : {})
+      };
+      const journey = await confirmJourney({
+        importId: record.backendImportId,
+        title: manualPayload.title,
+        facts
+      });
+      record.backendJourneyId = journey.id || null;
+      record.status = 'PARSED';
+      record.syncedAt = now;
+      await putRecord(record);
+      document.dispatchEvent(new CustomEvent('voyage:journey-confirmed', { detail: { journey } }));
+    } else {
+      await putRecord(record);
+      await uploadManual(record);
+    }
+
     document.querySelector('[data-import-dialog]')?.close();
     await refreshQueueViaScreen();
-    toast(existing ? 'Dados confirmados pelo usuário.' : 'Item adicionado à jornada.');
+    toast(existing?.type === 'application/pdf'
+      ? 'Jornada confirmada e salva na sua conta.'
+      : existing ? 'Dados salvos neste dispositivo.' : 'Item adicionado neste dispositivo.');
   } catch (error) {
     reportStorageFailure(error);
   }
@@ -400,29 +429,16 @@ async function syncManualItems() {
 }
 
 async function uploadManual(record) {
-  if (!navigator.onLine || !record.manualPayload) return false;
-  const response = await fetchApi('/api/v1/imports/manual/preview', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(record.manualPayload)
-  });
-  if (!response.ok) throw new Error(`manual_upload_${response.status}`);
-  const parsed = await response.json();
-  record.status = record.userConfirmed ? 'PARSED' : (parsed.status || 'NEEDS_REVIEW');
-  record.backendImportId = parsed.importId || null;
-  record.syncedAt = new Date().toISOString();
-  await putRecord(record);
-  return true;
+  if (!record?.manualPayload) return false;
+  // There is no canonical persisted manual-journey endpoint in the launch runtime.
+  // Keep the item local instead of sending it to a preview/demo route.
+  return false;
 }
 
 async function uploadPdf(record) {
   if (!navigator.onLine || !record.blob) return false;
-  const headers = { 'Content-Type': 'application/pdf', 'X-Voyage-Filename': record.name };
-  if (record.categoryHint) headers['X-Voyage-Category'] = record.categoryHint;
-  const response = await fetchApi('/api/v1/imports/pdf', { method: 'POST', headers, body: record.blob });
-  if (!response.ok) throw new Error(`upload_${response.status}`);
-  const parsed = await response.json();
-  record.status = parsed.status || 'PARSED';
+  const parsed = await uploadJourneyPdf(record.blob);
+  record.status = 'NEEDS_REVIEW';
   record.category = parsed.document?.category || record.categoryHint || 'OTHER';
   record.backendImportId = parsed.importId || null;
   record.reviewReasons = parsed.review?.reasons || [];
