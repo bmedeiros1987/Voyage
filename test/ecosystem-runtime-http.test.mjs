@@ -106,7 +106,7 @@ test('Voyage Premium + active CrewCheck membership unlocks capability but consen
   }, fixture);
   assert.equal(consent.json.granted, true);
 
-  const allowed = await call('/api/v1/ecosystem/vacation-bridge', {
+  const untrusted = await call('/api/v1/ecosystem/vacation-bridge', {
     method: 'POST',
     body: {
       crewCheckWindow: {
@@ -117,12 +117,11 @@ test('Voyage Premium + active CrewCheck membership unlocks capability but consen
       personalEvents: [{ id: 'trip-1', title: 'Roma', start: '2027-01-12T10:00:00Z' }]
     }
   }, fixture);
-  assert.equal(allowed.json.available, true);
-  assert.deepEqual(allowed.json.rejectedOperationalFields, ['DUTY_ROSTER']);
-  assert.equal(allowed.json.vacationWindow.origin, 'CREWCHECK');
-  assert.equal(allowed.json.overlay.insideWindow[0].origin, 'VOYAGE');
-  assert.equal(JSON.stringify(allowed.json).includes('must-never-leak'), false);
-  assert.equal(allowed.json.boundary.itineraryMutationRequiresApproval, true);
+  assert.equal(untrusted.res.statusCode, 409);
+  assert.equal(untrusted.json.available, false);
+  assert.equal(untrusted.json.reason, 'AUTHORIZED_VACATION_WINDOW_SOURCE_REQUIRED');
+  assert.equal(untrusted.json.overlay, null);
+  assert.doesNotMatch(JSON.stringify(untrusted.json), /2027-01-10|2027-01-20|must-never-leak|Roma/);
 });
 
 test('CrewCheck Premium alone does not unlock Unified Calendar until product policy explicitly says so', async () => {
