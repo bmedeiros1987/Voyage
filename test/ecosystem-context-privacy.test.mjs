@@ -71,7 +71,7 @@ for (const [name, membership] of [
       assert.deepEqual(actual.subscriptions, absent.subscriptions);
       assert.deepEqual(actual.entitlements, absent.entitlements);
       assert.deepEqual(actual.unifiedCalendar, absent.unifiedCalendar);
-      assert.equal(actual.consents.CREWCHECK_VOYAGE_CONNECTION, granted === true);
+      assert.equal(actual.consents.CREWCHECK_VOYAGE_CONNECTION, false);
       assert.doesNotMatch(JSON.stringify(actual), /private-crew-account|2026-09-01T03:21|2027-06-01|VISITOR/);
     }
 
