@@ -1,3 +1,4 @@
+import { fetchApi } from './api-origin.js';
 import { confirmJourney, flattenJourneyFacts, uploadJourneyPdf } from './operational-shell.js';
 import { purgedRecord, rawBlobRetention } from './retention-policy.js';
 
@@ -148,7 +149,7 @@ function injectReviewDialog() {
         <details class="import-review-preview" data-review-preview-wrap hidden><summary>Ver trecho extraído do documento</summary><p data-review-text></p></details>
       </section>
       <label class="import-field"><span>Tipo</span><select name="category" required>${categoryOptions()}</select></label>
-      <label class="import-field"><span>Título</span><input name="title" maxlength="220" placeholder="Ex.: Museu do Louvre, Hotel Roma, Trem para Florença" required /></label>
+      <label class="import-field"><span>Título</span><input name="title" maxlength="180" placeholder="Ex.: Museu do Louvre, Hotel Roma, Trem para Florença" required /></label>
       <div class="import-field-grid">
         <label class="import-field"><span>Início</span><input name="startsAt" type="datetime-local" /></label>
         <label class="import-field"><span>Fim</span><input name="endsAt" type="datetime-local" /></label>
