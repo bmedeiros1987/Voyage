@@ -148,6 +148,7 @@ function injectReviewDialog() {
         <dl class="import-review-facts" data-review-facts></dl>
         <details class="import-review-preview" data-review-preview-wrap hidden><summary>Ver trecho extraído do documento</summary><p data-review-text></p></details>
       </section>
+      <section class="import-reviewed-facts" data-reviewed-facts hidden aria-label="Fatos estruturados editáveis"></section>
       <label class="import-field"><span>Tipo</span><select name="category" required>${categoryOptions()}</select></label>
       <label class="import-field"><span>Título</span><input name="title" maxlength="180" placeholder="Ex.: Museu do Louvre, Hotel Roma, Trem para Florença" required /></label>
       <div class="import-field-grid">
@@ -251,8 +252,15 @@ async function handleEnhancementSubmit(event) {
 
     if (existing?.type === 'application/pdf') {
       if (!record.backendImportId) throw new Error('Este PDF ainda não foi sincronizado com sua conta.');
+      const reviewedFacts = {};
+      for (const input of form.querySelectorAll('[data-reviewed-fact]')) {
+        const key = String(input.dataset.reviewedFact || '');
+        if (!/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(key)) continue;
+        const value = String(input.value || '').trim().slice(0, 2000);
+        if (value) reviewedFacts[key] = value;
+      }
       const facts = {
-        ...flattenJourneyFacts(record.extractedFacts || {}),
+        ...reviewedFacts,
         category: manualPayload.category,
         ...(manualPayload.startsAt ? { startsAt: manualPayload.startsAt } : {}),
         ...(manualPayload.endsAt ? { endsAt: manualPayload.endsAt } : {}),
@@ -308,10 +316,38 @@ function openEditor(record) {
   dialog.querySelector('[data-dialog-title]').textContent = isReview ? 'Confirmar dados extraídos' : (record ? 'Editar item' : 'Adicionar item');
   dialog.querySelector('[data-import-submit]').textContent = isReview ? 'Confirmar e adicionar' : 'Adicionar à jornada';
   dialog.querySelector('[data-confirmation-note]').hidden = !isReview;
+  renderReviewedFactInputs(record, form);
   renderReviewEvidence(record);
 
   if (typeof dialog.showModal === 'function') dialog.showModal();
   else dialog.setAttribute('open', '');
+}
+
+function renderReviewedFactInputs(record, form) {
+  const section = form?.querySelector('[data-reviewed-facts]');
+  if (!section) return;
+
+  const isPdf = Boolean(record?.type === 'application/pdf');
+  if (!isPdf) {
+    section.hidden = true;
+    section.innerHTML = '';
+    return;
+  }
+
+  const facts = flattenJourneyFacts(record?.extractedFacts || {});
+  const entries = Object.entries(facts);
+  section.hidden = entries.length === 0;
+  section.innerHTML = entries.map(([key, value]) => `
+    <label class="import-field">
+      <span>${escapeHtml(reviewedFactLabel(key))}</span>
+      <input data-reviewed-fact="${escapeHtml(key)}" value="${escapeHtml(value)}" maxlength="2000" autocomplete="off" />
+    </label>`).join('');
+}
+
+function reviewedFactLabel(key) {
+  return String(key || '')
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function renderReviewEvidence(record) {
