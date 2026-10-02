@@ -35,15 +35,35 @@ test('Android workflow builds the operational entry before injecting and verifyi
   assert.match(workflow, /android\/app\/src\/main\/assets\/public\/index\.html/);
 });
 
-test('packaged Android entry uses the operational launch flow instead of disabled preview CTAs', async () => {
-  const launch = await readFile(`${repoRoot}/app/www/launch.html`, 'utf8');
-  const html = buildOperationalIndex(launch);
+test('packaged Android entry preserves the full Voyage product shell instead of the minimal launch validator', async () => {
+  const shell = await readFile(`${repoRoot}/app/www/index.html`, 'utf8');
+  const html = buildOperationalIndex(shell);
   assert.match(html, /name="voyage-api-origin"/, 'packaged shell must keep the build-time API origin hook');
-  assert.match(html, /id="login"/, 'packaged shell must expose the real Google login entry');
-  assert.match(html, /id="upload"/, 'packaged shell must expose the persisted PDF import flow');
-  assert.match(html, /id="review"/, 'packaged shell must require explicit review before save');
-  assert.match(html, /src="\.\/launch\.js"/, 'packaged shell must run the same operational launch client as web');
-  assert.match(html, /src="\.\/native-pdf-share\.js"/, 'packaged shell must preserve Android/PWA PDF share intake');
-  assert.doesNotMatch(html, /Nenhuma sessão será criada nesta prévia/, 'packaged release candidate must not present preview-only auth copy');
-  assert.doesNotMatch(html, /data-action="google-login"[^>]*disabled/, 'Google login must not be hard-disabled in the packaged release candidate');
+  assert.match(html, /data-screen="welcome"/, 'packaged shell must preserve the branded welcome experience');
+  assert.match(html, /data-screen="journeys"/, 'packaged shell must preserve the real journeys UI');
+  assert.match(html, /signature-experience\.js/, 'packaged shell must keep the premium product experience');
+  assert.match(html, /adaptive-home\.js/, 'packaged shell must keep the adaptive home');
+  assert.match(html, /import-enhancements\.js/, 'packaged shell must keep the universal importer');
+  assert.match(html, /native-pdf-share\.js/, 'packaged shell must preserve Android/PWA PDF share intake');
+  assert.match(html, /operational-shell\.js/, 'packaged shell must bind the product UI to authenticated operational APIs');
+  assert.doesNotMatch(html, /Suas viagens, com você\./, 'the Android package must not fall back to the minimal launch validator');
+});
+
+test('official shell runtime binds login, persisted session and confirmed PDF journeys to canonical APIs', async () => {
+  const runtime = await readFile(`${repoRoot}/app/www/operational-shell.js`, 'utf8');
+  assert.match(runtime, /\/api\/v1\/auth\/google\/status/);
+  assert.match(runtime, /\/api\/v1\/auth\/session/);
+  assert.match(runtime, /\/api\/v1\/journeys\/imports\/pdf/);
+  assert.match(runtime, /\/api\/v1\/journeys/);
+  assert.doesNotMatch(runtime, /\/api\/v1\/imports\/pdf/);
+  assert.doesNotMatch(runtime, /\/api\/v1\/imports\/manual\/preview/);
+});
+
+
+test('official importer keeps structured extracted facts editable before canonical confirmation', async () => {
+  const importer = await readFile(`${repoRoot}/app/www/import-enhancements.js`, 'utf8');
+  assert.match(importer, /flattenJourneyFacts/);
+  assert.match(importer, /data-reviewed-fact/);
+  assert.match(importer, /confirmJourney/);
+  assert.match(importer, /Jornada confirmada e salva na sua conta/);
 });

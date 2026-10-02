@@ -1,4 +1,5 @@
 import { fetchApi } from './api-origin.js';
+import { confirmJourney, flattenJourneyFacts, uploadJourneyPdf } from './operational-shell.js';
 import { purgedRecord, rawBlobRetention } from './retention-policy.js';
 
 const DB_NAME = 'voyage-local';
@@ -26,7 +27,9 @@ async function installUniversalImporterEnhancements() {
   document.addEventListener('click', handleEnhancementClick);
   document.addEventListener('submit', handleEnhancementSubmit);
   document.addEventListener('voyage:imports-open', () => purgeExpiredRawBlobs()
-    .then(() => refreshQueueViaScreen())
+    .then(() => syncManualItems())
+    .catch((error) => reportStorageFailure(error)));
+  document.addEventListener('voyage:session-ready', () => syncManualItems()
     .catch((error) => reportStorageFailure(error)));
   window.addEventListener('online', () => purgeExpiredRawBlobs()
     .then(() => syncManualItems())
@@ -125,7 +128,7 @@ function injectManualEntryPanel() {
   panel.className = 'import-panel';
   panel.dataset.manualPanel = '';
   panel.innerHTML = `
-    <div class="import-panel__head"><div class="import-panel__icon">＋</div><div><h2>Adicionar sem PDF</h2><p>Inclua uma reserva ou compromisso mesmo quando você só tiver os dados. Funciona offline e sincroniza depois.</p></div></div>
+    <div class="import-panel__head"><div class="import-panel__icon">＋</div><div><h2>Adicionar sem PDF</h2><p>Inclua uma reserva ou compromisso mesmo quando você só tiver os dados. Fica salvo neste dispositivo; a sincronização manual ainda não está disponível.</p></div></div>
     <button class="button button--outline" type="button" data-import-manual-open>Adicionar item manualmente</button>`;
   stack.insertBefore(panel, gmailPanel);
 }
@@ -145,8 +148,9 @@ function injectReviewDialog() {
         <dl class="import-review-facts" data-review-facts></dl>
         <details class="import-review-preview" data-review-preview-wrap hidden><summary>Ver trecho extraído do documento</summary><p data-review-text></p></details>
       </section>
+      <section class="import-reviewed-facts" data-reviewed-facts hidden aria-label="Fatos estruturados editáveis"></section>
       <label class="import-field"><span>Tipo</span><select name="category" required>${categoryOptions()}</select></label>
-      <label class="import-field"><span>Título</span><input name="title" maxlength="220" placeholder="Ex.: Museu do Louvre, Hotel Roma, Trem para Florença" required /></label>
+      <label class="import-field"><span>Título</span><input name="title" maxlength="180" placeholder="Ex.: Museu do Louvre, Hotel Roma, Trem para Florença" required /></label>
       <div class="import-field-grid">
         <label class="import-field"><span>Início</span><input name="startsAt" type="datetime-local" /></label>
         <label class="import-field"><span>Fim</span><input name="endsAt" type="datetime-local" /></label>
@@ -227,7 +231,7 @@ async function handleEnhancementSubmit(event) {
       category: manualPayload.category,
       categoryHint: manualPayload.category,
       manualPayload: { ...(existing.manualPayload || {}), ...manualPayload },
-      status: existing.blob ? 'PARSED' : 'LOCAL_MANUAL_QUEUED',
+      status: existing.type === 'application/pdf' ? existing.status : 'LOCAL_MANUAL_QUEUED',
       reviewReasons: [],
       reviewedAt: now,
       userConfirmed: true
@@ -246,11 +250,45 @@ async function handleEnhancementSubmit(event) {
       userConfirmed: true
     };
 
-    await putRecord(record);
-    if (!record.blob) await uploadManual(record).catch(() => false);
+    if (existing?.type === 'application/pdf') {
+      if (!record.backendImportId) throw new Error('Este PDF ainda não foi sincronizado com sua conta.');
+      const reviewedFacts = {};
+      for (const input of form.querySelectorAll('[data-reviewed-fact]')) {
+        const key = String(input.dataset.reviewedFact || '');
+        if (!/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(key)) continue;
+        const value = String(input.value || '').trim().slice(0, 2000);
+        if (value) reviewedFacts[key] = value;
+      }
+      const facts = {
+        ...reviewedFacts,
+        category: manualPayload.category,
+        ...(manualPayload.startsAt ? { startsAt: manualPayload.startsAt } : {}),
+        ...(manualPayload.endsAt ? { endsAt: manualPayload.endsAt } : {}),
+        ...(manualPayload.location ? { location: manualPayload.location } : {}),
+        ...(manualPayload.provider ? { provider: manualPayload.provider } : {}),
+        ...(manualPayload.confirmationCode ? { confirmationCode: manualPayload.confirmationCode } : {}),
+        ...(manualPayload.notes ? { notes: manualPayload.notes } : {})
+      };
+      const journey = await confirmJourney({
+        importId: record.backendImportId,
+        title: manualPayload.title,
+        facts
+      });
+      record.backendJourneyId = journey.id || null;
+      record.status = 'PARSED';
+      record.syncedAt = now;
+      await putRecord(record);
+      document.dispatchEvent(new CustomEvent('voyage:journey-confirmed', { detail: { journey } }));
+    } else {
+      await putRecord(record);
+      await uploadManual(record);
+    }
+
     document.querySelector('[data-import-dialog]')?.close();
     await refreshQueueViaScreen();
-    toast(existing ? 'Dados confirmados pelo usuário.' : 'Item adicionado à jornada.');
+    toast(existing?.type === 'application/pdf'
+      ? 'Jornada confirmada e salva na sua conta.'
+      : existing ? 'Dados salvos neste dispositivo.' : 'Item adicionado neste dispositivo.');
   } catch (error) {
     reportStorageFailure(error);
   }
@@ -278,10 +316,38 @@ function openEditor(record) {
   dialog.querySelector('[data-dialog-title]').textContent = isReview ? 'Confirmar dados extraídos' : (record ? 'Editar item' : 'Adicionar item');
   dialog.querySelector('[data-import-submit]').textContent = isReview ? 'Confirmar e adicionar' : 'Adicionar à jornada';
   dialog.querySelector('[data-confirmation-note]').hidden = !isReview;
+  renderReviewedFactInputs(record, form);
   renderReviewEvidence(record);
 
   if (typeof dialog.showModal === 'function') dialog.showModal();
   else dialog.setAttribute('open', '');
+}
+
+function renderReviewedFactInputs(record, form) {
+  const section = form?.querySelector('[data-reviewed-facts]');
+  if (!section) return;
+
+  const isPdf = Boolean(record?.type === 'application/pdf');
+  if (!isPdf) {
+    section.hidden = true;
+    section.innerHTML = '';
+    return;
+  }
+
+  const facts = flattenJourneyFacts(record?.extractedFacts || {});
+  const entries = Object.entries(facts);
+  section.hidden = entries.length === 0;
+  section.innerHTML = entries.map(([key, value]) => `
+    <label class="import-field">
+      <span>${escapeHtml(reviewedFactLabel(key))}</span>
+      <input data-reviewed-fact="${escapeHtml(key)}" value="${escapeHtml(value)}" maxlength="2000" autocomplete="off" />
+    </label>`).join('');
+}
+
+function reviewedFactLabel(key) {
+  return String(key || '')
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function renderReviewEvidence(record) {
@@ -400,29 +466,16 @@ async function syncManualItems() {
 }
 
 async function uploadManual(record) {
-  if (!navigator.onLine || !record.manualPayload) return false;
-  const response = await fetchApi('/api/v1/imports/manual/preview', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(record.manualPayload)
-  });
-  if (!response.ok) throw new Error(`manual_upload_${response.status}`);
-  const parsed = await response.json();
-  record.status = record.userConfirmed ? 'PARSED' : (parsed.status || 'NEEDS_REVIEW');
-  record.backendImportId = parsed.importId || null;
-  record.syncedAt = new Date().toISOString();
-  await putRecord(record);
-  return true;
+  if (!record?.manualPayload) return false;
+  // There is no canonical persisted manual-journey endpoint in the launch runtime.
+  // Keep the item local instead of sending it to a preview/demo route.
+  return false;
 }
 
 async function uploadPdf(record) {
   if (!navigator.onLine || !record.blob) return false;
-  const headers = { 'Content-Type': 'application/pdf', 'X-Voyage-Filename': record.name };
-  if (record.categoryHint) headers['X-Voyage-Category'] = record.categoryHint;
-  const response = await fetchApi('/api/v1/imports/pdf', { method: 'POST', headers, body: record.blob });
-  if (!response.ok) throw new Error(`upload_${response.status}`);
-  const parsed = await response.json();
-  record.status = parsed.status || 'PARSED';
+  const parsed = await uploadJourneyPdf(record.blob);
+  record.status = 'NEEDS_REVIEW';
   record.category = parsed.document?.category || record.categoryHint || 'OTHER';
   record.backendImportId = parsed.importId || null;
   record.reviewReasons = parsed.review?.reasons || [];

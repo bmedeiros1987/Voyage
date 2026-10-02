@@ -41,7 +41,7 @@ jobs:
         run: npm run android:operational-entry
       - name: Configure packaged API origin
         env:
-          VOYAGE_API_ORIGIN: ${{ vars.VOYAGE_API_ORIGIN || 'https://voyage-api-okay.onrender.com' }}
+          VOYAGE_API_ORIGIN: ${{ github.ref_name == 'fix/android-official-shell-p1' && 'https://voyage-pr57-e2e.onrender.com' || vars.VOYAGE_API_ORIGIN || 'https://voyage-api-okay.onrender.com' }}
         run: npm run android:api-origin
       - name: Synchronize web assets
         run: npx cap sync android
@@ -51,11 +51,14 @@ jobs:
           test -f "$PACKAGED_INDEX"
           grep -q 'name="voyage-api-origin"' "$PACKAGED_INDEX"
           ! grep -q 'name="voyage-api-origin" content=""' "$PACKAGED_INDEX"
-          grep -q 'id="login"' "$PACKAGED_INDEX"
-          grep -q 'id="upload"' "$PACKAGED_INDEX"
-          grep -q 'id="review"' "$PACKAGED_INDEX"
-          grep -q 'src="./launch.js"' "$PACKAGED_INDEX"
+          grep -q 'data-screen="welcome"' "$PACKAGED_INDEX"
+          grep -q 'data-screen="journeys"' "$PACKAGED_INDEX"
+          grep -q 'src="./signature-experience.js"' "$PACKAGED_INDEX"
+          grep -q 'src="./operational-shell.js"' "$PACKAGED_INDEX"
+          grep -q 'src="./import-enhancements.js"' "$PACKAGED_INDEX"
           grep -q 'src="./native-pdf-share.js"' "$PACKAGED_INDEX"
+          ! grep -q 'Suas viagens, com você.' "$PACKAGED_INDEX"
+          ! grep -q 'src="./launch.js"' "$PACKAGED_INDEX"
       - name: Verify PDF share target survived sync
         run: |
           grep -q 'android.intent.action.SEND' android/app/src/main/AndroidManifest.xml
