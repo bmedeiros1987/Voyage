@@ -101,3 +101,65 @@ test('SQL ecosystem profile survives pool recreation and remains owner-scoped', 
     await pool.end();
   }
 });
+
+
+test('owner uniqueness migration upgrades an already-created 007 table and stays idempotent', { skip: !databaseUrl }, async () => {
+  const url = new URL(databaseUrl);
+  assert.equal(url.pathname, '/voyage_test', 'Only the disposable CI database is allowed');
+  assert.ok(['127.0.0.1', 'localhost'].includes(url.hostname));
+
+  const { createPool } = await import('mysql2/promise');
+  const pool = createPool(databaseUrl);
+  const firstOwner = `gid_upgrade_${randomUUID().replaceAll('-', '')}`;
+  const secondOwner = `gid_upgrade_${randomUUID().replaceAll('-', '')}`;
+
+  async function applySqlFile(relativePath) {
+    const sql = (await readFile(new URL(relativePath, import.meta.url), 'utf8')).replace(/^--.*$/gm, '');
+    for (const statement of sql.split(';').filter((part) => part.trim())) await pool.query(statement);
+  }
+
+  try {
+    await applySqlFile('../db/007_ecosystem_identity_entitlements.sql');
+
+    const [existingIndexes] = await pool.query(
+      `SHOW INDEX FROM ecosystem_memberships WHERE Key_name='uq_ecosystem_membership_account_owner'`
+    );
+    if (existingIndexes.length) {
+      await pool.query('ALTER TABLE ecosystem_memberships DROP INDEX uq_ecosystem_membership_account_owner');
+    }
+
+    const [before] = await pool.query(
+      `SHOW INDEX FROM ecosystem_memberships WHERE Key_name='uq_ecosystem_membership_account_owner'`
+    );
+    assert.equal(before.length, 0, 'simulated pre-009 schema must not have the owner uniqueness index');
+
+    await applySqlFile('../db/009_ecosystem_membership_owner_unique.sql');
+    await applySqlFile('../db/009_ecosystem_membership_owner_unique.sql');
+
+    const [after] = await pool.query(
+      `SHOW INDEX FROM ecosystem_memberships WHERE Key_name='uq_ecosystem_membership_account_owner'`
+    );
+    assert.ok(after.length >= 1);
+    assert.ok(after.every((row) => Number(row.Non_unique) === 0));
+
+    await pool.execute(
+      `INSERT INTO ecosystem_memberships
+         (global_user_id,product,state,verified_by_product,product_account_id,crew_role,linked_at,deleted_at)
+       VALUES (?, 'CREWCHECK', 'ACTIVE', TRUE, 'upgrade-shared-account', 'CABIN_CREW', NULL, NULL)`,
+      [firstOwner]
+    );
+    await assert.rejects(
+      () => pool.execute(
+        `INSERT INTO ecosystem_memberships
+           (global_user_id,product,state,verified_by_product,product_account_id,crew_role,linked_at,deleted_at)
+         VALUES (?, 'CREWCHECK', 'ACTIVE', TRUE, 'upgrade-shared-account', 'CABIN_CREW', NULL, NULL)`,
+        [secondOwner]
+      ),
+      (error) => error?.code === 'ER_DUP_ENTRY'
+    );
+  } finally {
+    await pool.execute('DELETE FROM ecosystem_memberships WHERE global_user_id IN (?,?)', [firstOwner, secondOwner]);
+    await pool.execute('DELETE FROM ecosystem_identities WHERE global_user_id IN (?,?)', [firstOwner, secondOwner]);
+    await pool.end();
+  }
+});
