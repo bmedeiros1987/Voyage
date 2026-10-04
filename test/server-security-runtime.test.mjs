@@ -84,6 +84,14 @@ test('CORS reflects only the configured web origin or trusted Capacitor shell or
   assert.equal(untrusted.headers['access-control-allow-origin'], undefined);
 });
 
+test('ecosystem runtime is mounted behind persisted authentication', async () => {
+  for (const path of ['/api/v1/ecosystem/context', '/api/v1/ecosystem/vacation-bridge']) {
+    const response = await exactRequest(path);
+    assert.equal(response.statusCode, 401, `${path} must never be public`);
+    assert.match(response.body, /authentication_required/);
+  }
+});
+
 test('Google login status and start route are mounted through the real server router', async () => {
   const status = await exactRequest('/api/v1/auth/google/status');
   assert.equal(status.statusCode, 200);
